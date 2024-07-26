@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import open3d as o3d
 import numpy as np
 import matplotlib.pyplot as plt
@@ -101,7 +103,7 @@ def generate_ortho_image_neg_z(point_cloud, colors, resolution=(1000, 1000)):
     return image
 
 
-def generate_spherical_image(point_cloud, normals, resolution_y=1000):
+def generate_spherical_image(point_cloud, normals, resolution_y=3000):
     # Ensure the point cloud is centered on the origin
     center_coordinates = np.mean(point_cloud, axis=0)
     point_cloud -= center_coordinates
@@ -110,16 +112,6 @@ def generate_spherical_image(point_cloud, normals, resolution_y=1000):
     # Compute rotation to align a primary normal with the z-axis
     primary_normal_index = np.argmax(point_cloud[:, 2])  # For example, the highest point
     point_cloud = align_point_cloud(point_cloud, normals, primary_normal_index)
-
-    from open3d.cuda.pybind.geometry import PointCloud
-
-    # load numpy array to open3d point cloud object
-    point_cloud_obj = PointCloud()
-    point_cloud_obj.points = o3d.utility.Vector3dVector(point_cloud)
-
-
-    # Display the 3D point cloud using open3d
-    o3d.visualization.draw_geometries([point_cloud_obj])
 
     # Convert to spherical coordinates
     r = np.linalg.norm(point_cloud, axis=1)
@@ -144,29 +136,29 @@ def generate_spherical_image(point_cloud, normals, resolution_y=1000):
 if __name__ == '__main__':
 
     # Usage
-    filename = '/mobileye/RPT/users/kfirs/temp/section-left-collumn-church-of-holy-sepulchre/source/3D_reduced/3D_reduced.obj'
+    filename = Path('/mobileye/RPT/users/kfirs/temp/S01/S01.obj')
 
-    vertices, normals = load_mesh(filename)
+    vertices, normals = load_mesh(str(filename))
     spherical_image = generate_spherical_image(vertices, normals)
 
     # Save the spherical image without any axis, colorbar, or white edges
     plt.imshow(spherical_image)
     plt.axis('off')  # Disable axis
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)  # Adjust the plot edges
-    plt.savefig('/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/3D_reduced_spherical_image_clean.png', bbox_inches='tight', pad_inches=0, dpi=300)
+    plt.savefig(filename.parent/ f'{filename.stem}_spherical_projection.png', bbox_inches='tight', pad_inches=0, dpi=400)
     plt.close()  # Close the plot to free memory
 
     colors = np.full((len(vertices), 3), [255, 255, 255], dtype=np.uint8)  # White colors for all vertices
 
     # Generate orthoimage
-    resolution = (3000, 3000)  # Set the desired resolution for the orthoimage
+    resolution = (640, 640)  # Set the desired resolution for the orthoimage
     ortho_image = generate_ortho_image(vertices, colors, resolution)
 
     # Save the orthoimage without any axis, colorbar, or white edges
     plt.imshow(ortho_image)
     plt.axis('off')  # Disable axis
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0, wspace=0, hspace=0)  # Adjust the plot edges
-    plt.savefig(f'3D_reduced_ortho_image_res{resolution[0]}.png', bbox_inches='tight', pad_inches=0, dpi=300)  # Save the image
+    plt.savefig(filename.parent/ f'{filename.name}_orthoimage.png', bbox_inches='tight', pad_inches=0, dpi=300)  # Save the image
     plt.close()  # Close the plot to free memory
 
     # # Generate orthoimage viewed from -z direction
