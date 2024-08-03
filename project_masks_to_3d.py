@@ -83,13 +83,13 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
     combined_pcd.colors = o3d.utility.Vector3dVector(colors)
 
     # Save the combined point cloud
-    combined_point_cloud_path = "combined_colored_points.ply"
-    o3d.io.write_point_cloud(combined_point_cloud_path, combined_pcd)
+    masked_point_cloud = params_path.replace("_params.json", "_masked_point_cloud.ply")
+    o3d.io.write_point_cloud(masked_point_cloud, combined_pcd)
 
     # Visualize the combined point cloud
     o3d.visualization.draw_geometries([combined_pcd])
 
-    return combined_point_cloud_path
+    return masked_point_cloud
 if __name__ == '__main__':
     # Usage
     obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/S01/S01.obj'
