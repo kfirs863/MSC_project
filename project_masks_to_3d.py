@@ -1,68 +1,105 @@
 import open3d as o3d
 import numpy as np
-import cv2
 import json
 
-from utils import preprocess_mesh
+from tqdm import tqdm
 
 
-def project_masks_to_point_cloud(obj_path, json_path, masks, mask_colors):
-    rotated_mesh, rotation_matrix = preprocess_mesh(obj_path)
-    # Load the 3D model's point cloud
-    rotated_mesh.compute_vertex_normals()
-    point_cloud = o3d.utility.Vector3dVector(rotated_mesh.vertices)
+def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path):
+    def project_2d_to_3d(u, v, depth, intrinsics, extrinsics):
+        fx = intrinsics['fx']
+        fy = intrinsics['fy']
+        cx = intrinsics['cx']
+        cy = intrinsics['cy']
 
-    # Load camera intrinsic parameters and the rotation matrix from the JSON file
-    with open(json_path, 'r') as f:
+        z = depth[v, u]
+        x = (u - cx) * z / fx
+        y = (v - cy) * z / fy
+        point_3d = np.array([x, y, z, 1.0])
+
+        # Apply the extrinsics to get the 3D point in world coordinates
+        point_3d_world = np.dot(extrinsics, point_3d)
+
+        return point_3d_world[:3]
+
+    # Load the masks and mask colors
+    best_masks = np.load(masks_path)
+    mask_colors = np.load(colors_path)
+
+    # Load the saved camera parameters
+    with open(params_path, 'r') as f:
         params = json.load(f)
+
     camera_intrinsics = params['camera_intrinsics']
     rotation_matrix = np.array(params['rotation_matrix'])
+    extrinsic = np.array(params['extrinsic'])
 
-    fx = camera_intrinsics['fx']
-    fy = camera_intrinsics['fy']
-    cx = camera_intrinsics['cx']
-    cy = camera_intrinsics['cy']
+    # Load the depth image
+    depth_np = np.load(depth_path)
 
-    # Transform 3D points using the inverse of the rotation matrix
-    rotated_vertices = np.asarray(point_cloud.points)
-    inverse_rotation_matrix = np.linalg.inv(rotation_matrix)
-    transformed_vertices = np.dot(rotated_vertices, inverse_rotation_matrix.T)
+    # Combine all masks to create a full mask
+    combined_mask = np.zeros(best_masks[0].shape, dtype=bool)
+    for mask in best_masks:
+        combined_mask |= mask
 
-    # Project 3D points to 2D using intrinsic parameters
-    points_2d = np.zeros((transformed_vertices.shape[0], 2))
-    points_2d[:, 0] = fx * (transformed_vertices[:, 0] / -transformed_vertices[:, 2]) + cx
-    points_2d[:, 1] = fy * (transformed_vertices[:, 1] / -transformed_vertices[:, 2]) + cy
+    # Create the black mask for pixels not belonging to any mask
+    black_mask = ~combined_mask
 
-    # Create an array to store colors for each 3D point
-    point_colors = np.zeros((transformed_vertices.shape[0], 3), dtype=np.uint8)
+    # Process the original masks
+    points_3d = []
+    colors = []
 
-    # Iterate through the masks and apply colors to the points
-    for mask, color in zip(masks, mask_colors):
-        for i, (x, y) in enumerate(points_2d):
-            x, y = int(x), int(y)
-            if 0 <= x < mask.shape[1] and 0 <= y < mask.shape[0]:
-                if mask[y, x] > 0:  # If the mask is present at this point
-                    point_colors[i] = color
+    for mask_idx in tqdm(range(best_masks.shape[0]), desc="Processing masks"):
+        mask = best_masks[mask_idx]
+        color = mask_colors[mask_idx]
 
-    # Apply the colors to the point cloud
-    point_cloud.colors = o3d.utility.Vector3dVector(point_colors / 255.0)
+        # Get the pixel coordinates of the mask
+        mask_indices = np.argwhere(mask)
 
-    # Save or visualize the colored point cloud
-    o3d.io.write_point_cloud("colored_point_cloud.ply", point_cloud)
-    o3d.visualization.draw_geometries([point_cloud])
+        for v, u in mask_indices:
+            point_3d = project_2d_to_3d(u, v, depth_np, camera_intrinsics, extrinsic)
+            points_3d.append(point_3d)
+            colors.append(color)
 
-    return point_cloud
+    # Process the black mask
+    black_mask_indices = np.argwhere(black_mask)
+
+    for v, u in tqdm(black_mask_indices, desc="Processing black mask"):
+        point_3d = project_2d_to_3d(u, v, depth_np, camera_intrinsics, extrinsic)
+        points_3d.append(point_3d)
+        colors.append([0, 0, 0])  # Color black
+
+    points_3d = np.array(points_3d)
+    colors = np.array(colors) / 255.0  # Normalize colors to range [0, 1] for Open3D
+
+    # Create a point cloud for the mask and black mask
+    combined_pcd = o3d.geometry.PointCloud()
+    combined_pcd.points = o3d.utility.Vector3dVector(points_3d)
+    combined_pcd.colors = o3d.utility.Vector3dVector(colors)
+
+    # Save the combined point cloud
+    combined_point_cloud_path = "combined_colored_points.ply"
+    o3d.io.write_point_cloud(combined_point_cloud_path, combined_pcd)
+
+    # Visualize the combined point cloud
+    o3d.visualization.draw_geometries([combined_pcd])
+
+    return combined_point_cloud_path
+
+
 
 
 if __name__ == '__main__':
-    obj_path = 'path/to/your/object.obj'
-    json_path = 'path/to/your/params.json'
+    # Usage
+    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/S01/S01.obj'
+    params_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_params.json'
+    masks_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_masks.npy'
+    colors_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_colors.npy'
+    depth_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_depth.npy'
 
-    # Load the masks (assuming masks is a list of 2D numpy arrays)
-    # masks = [cv2.imread('path/to/mask1.png', cv2.IMREAD_GRAYSCALE), ...]
+    # Usage
+    project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path)
 
-    # Define the mask colors (assuming mask_colors is a list of RGB tuples)
-    # mask_colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), ...]
-
-    # Example usage
-    point_cloud = project_masks_to_point_cloud(obj_path, json_path, masks, mask_colors)
+    # Visualize or save the result
+    # o3d.visualization.draw_geometries([colored_mesh])
+    # # o3d.io.write_triangle_mesh("colored_mesh.obj", colored_mesh)

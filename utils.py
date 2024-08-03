@@ -1,14 +1,16 @@
+import json
 import os
 import open3d as o3d
 import numpy as np
 from sklearn.decomposition import PCA
+import cv2
 
 def find_rotation_matrix(vertices):
     """Find the rotation matrix to align the dominant plane of the point cloud with the XY plane."""
     pca = PCA(n_components=3)
     pca.fit(vertices)
     normal = pca.components_[2]  # The normal to the plane is the last principal component
-    z_axis = np.array([0, 0, -1])
+    z_axis = np.array([0, 0, -1])  # Z-axis is pointing to the opposite direction of the PCA normal
 
     # Compute the rotation matrix to align the normal with the z-axis
     v = np.cross(normal, z_axis)
@@ -31,26 +33,40 @@ def rotate_mesh(mesh, rotation_matrix):
     return mesh
 
 def preprocess_mesh(obj_path):
-    # Load the mesh
-    mesh = o3d.io.read_triangle_mesh(obj_path, enable_post_processing=True)
+    """Load and preprocess the mesh by rotating it to align with the XY plane."""
+    try:
+        mesh = o3d.io.read_triangle_mesh(obj_path, enable_post_processing=True)
+    except Exception as e:
+        raise ValueError(f"Error reading the mesh: {e}")
 
     if not mesh.has_triangles():
         raise ValueError("The mesh does not contain any triangles.")
 
-    # Ensure the mesh has textures
     if not mesh.has_textures():
         raise ValueError("The mesh does not contain textures.")
 
-    # Ensure the mesh has vertex normals
     mesh.compute_vertex_normals()
-
-    # Convert Open3D mesh to NumPy array
     vertices = np.asarray(mesh.vertices)
-
-    # Find the rotation matrix
     rotation_matrix = find_rotation_matrix(vertices)
-
-    # Rotate the mesh
     rotated_mesh = rotate_mesh(mesh, rotation_matrix)
 
     return rotated_mesh, rotation_matrix
+
+def save_image_and_params(image_np, depth_np, obj_stem, rotation_matrix, camera_intrinsics, extrinsic):
+    """Save the captured image and camera parameters."""
+    os.makedirs("./images", exist_ok=True)
+    output_image_path = f"./images/{obj_stem}_ortho.png"
+    output_depth_path = f"./images/{obj_stem}_depth.npy"
+    cv2.imwrite(output_image_path, image_np)
+    np.save(output_depth_path, depth_np)
+
+    output_params_path = f"./images/{obj_stem}_params.json"
+    params = {
+        'camera_intrinsics': camera_intrinsics,
+        'rotation_matrix': rotation_matrix.tolist(),
+        'extrinsic': extrinsic.tolist()  # Add extrinsic parameters
+    }
+    with open(output_params_path, 'w') as f:
+        json.dump(params, f, indent=4)
+
+    return output_image_path, output_depth_path, output_params_path
