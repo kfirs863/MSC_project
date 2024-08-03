@@ -13,6 +13,9 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
         cy = intrinsics['cy']
 
         z = depth[v, u]
+        if z < 1e-6:  # Skip points with near-zero depth
+            return None
+
         x = (u - cx) * z / fx
         y = (v - cy) * z / fy
         point_3d = np.array([x, y, z, 1.0])
@@ -58,16 +61,18 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
 
         for v, u in mask_indices:
             point_3d = project_2d_to_3d(u, v, depth_np, camera_intrinsics, extrinsic)
-            points_3d.append(point_3d)
-            colors.append(color)
+            if point_3d is not None:
+                points_3d.append(point_3d)
+                colors.append(color)
 
     # Process the black mask
     black_mask_indices = np.argwhere(black_mask)
 
     for v, u in tqdm(black_mask_indices, desc="Processing black mask"):
         point_3d = project_2d_to_3d(u, v, depth_np, camera_intrinsics, extrinsic)
-        points_3d.append(point_3d)
-        colors.append([0, 0, 0])  # Color black
+        if point_3d is not None:
+            points_3d.append(point_3d)
+            colors.append([0, 0, 0])  # Color black
 
     points_3d = np.array(points_3d)
     colors = np.array(colors) / 255.0  # Normalize colors to range [0, 1] for Open3D
@@ -85,10 +90,6 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
     o3d.visualization.draw_geometries([combined_pcd])
 
     return combined_point_cloud_path
-
-
-
-
 if __name__ == '__main__':
     # Usage
     obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/S01/S01.obj'

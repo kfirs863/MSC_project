@@ -4,8 +4,11 @@ import matplotlib.pyplot as plt
 from utils import *
 
 
-def capture_textured_image_and_depth_from_obj(obj_path):
-    rotated_mesh, rotation_matrix = preprocess_mesh(obj_path)
+def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor=0.5, yaw_angle_degrees=0):
+    rotated_mesh, rotation_matrix = preprocess_mesh(obj_path, flip_z, yaw_angle_degrees)
+
+    # Color the mesh by vertex normals
+    color_mesh_by_vertex_normals(rotated_mesh)
 
     vis = o3d.visualization.Visualizer()
     vis.create_window(visible=False, width=1920, height=1080)
@@ -24,13 +27,23 @@ def capture_textured_image_and_depth_from_obj(obj_path):
     pinhole_parameters = ctr.convert_to_pinhole_camera_parameters()
     extrinsic = np.array(pinhole_parameters.extrinsic)
     extrinsic[:3, 3] = -np.array([0, 0, camera_distance])
+
+    # Apply yaw rotation to the extrinsic matrix
+    yaw_rotation = np.eye(4)
+    angle_radians = np.radians(yaw_angle_degrees)
+    yaw_rotation[0, 0] = np.cos(angle_radians)
+    yaw_rotation[0, 1] = -np.sin(angle_radians)
+    yaw_rotation[1, 0] = np.sin(angle_radians)
+    yaw_rotation[1, 1] = np.cos(angle_radians)
+    extrinsic = yaw_rotation @ extrinsic
+
     pinhole_parameters.extrinsic = extrinsic
     ctr.convert_from_pinhole_camera_parameters(pinhole_parameters)
 
     ctr.set_lookat(lookat)
     ctr.set_front(front)
     ctr.set_up(up)
-    ctr.set_zoom(0.3)
+    ctr.set_zoom(zoom_factor)
 
     intrinsic = pinhole_parameters.intrinsic
     fx = intrinsic.intrinsic_matrix[0, 0]
@@ -51,6 +64,9 @@ def capture_textured_image_and_depth_from_obj(obj_path):
     image_np = (np.asarray(image) * 255).astype(np.uint8)
     depth_np = np.asarray(depth)
 
+    # Enhance the captured image
+    image_np = enhance_image(image_np)
+
     obj_stem = os.path.splitext(os.path.basename(obj_path))[0]
     output_image_path, output_depth_path, output_params_path = save_image_and_params(image_np, depth_np, obj_stem,
                                                                                      rotation_matrix, camera_intrinsics,
@@ -60,13 +76,14 @@ def capture_textured_image_and_depth_from_obj(obj_path):
 
 
 if __name__ == '__main__':
-    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/inscription on Staircase left-20240801T223259Z-001/inscription on Staircase left/stone.obj'
-    image_path, camera_params_path = capture_textured_image_and_depth_from_obj(obj_path)
-    print(f"Image saved to: {image_path}")
-    print(f"Camera intrinsics saved: {camera_params_path}")
-
+    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Herald_Staircase right-20240803T111334Z-001/Herald_Staircase right/Coat of Arms Agisoft/COA.obj'
+    # obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Crosses on Staircase left/staircase_left.obj'
+    output_image_path, output_depth_path, output_params_path = capture_textured_image_and_depth_from_obj(obj_path,zoom_factor=0.30)
+    print(f"Image saved to: {output_image_path}")
+    print(f"Camera intrinsics saved: {output_params_path}")
     # Load and display the image
-    image = cv2.imread(image_path)
-    plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    image = cv2.imread(output_image_path, cv2.IMREAD_COLOR)
+    plt.imshow(image)
     plt.axis('off')
+
     plt.show()
