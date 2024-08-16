@@ -12,7 +12,14 @@ from RealESRGAN import RealESRGAN
 
 
 
-def find_rotation_matrix(vertices, flip_z=True):
+def center_data(vertices):
+    """Center the vertices of the point cloud or mesh to the origin."""
+    center = np.mean(vertices, axis=0)
+    centered_vertices = vertices - center
+    return centered_vertices, center
+
+
+def find_rotation_matrix(vertices: np.array, flip_z: bool = True):
     """Find the rotation matrix to align the dominant plane of the point cloud with the XY plane."""
     pca = PCA(n_components=3)
     pca.fit(vertices)

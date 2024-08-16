@@ -2,29 +2,39 @@ import open3d as o3d
 import numpy as np
 import json
 
+from sklearn.decomposition import PCA
 from tqdm import tqdm
 
+from utils import find_rotation_matrix, center_data
+
+
+def project_2d_to_3d(u, v, depth, intrinsics, extrinsics):
+    fx = intrinsics['fx']
+    fy = intrinsics['fy']
+    cx = intrinsics['cx']
+    cy = intrinsics['cy']
+
+    z = depth[v, u]
+    if z < 1e-6:  # Skip points with near-zero depth
+        return None
+
+    x = (u - cx) * z / fx
+    y = (v - cy) * z / fy
+    point_3d = np.array([x, y, z, 1.0])
+
+    # Apply the extrinsics to get the 3D point in world coordinates
+    point_3d_world = np.dot(extrinsics, point_3d)
+
+    return point_3d_world[:3]
+
+def center_and_align(vertices):
+    """Center and align the vertices using PCA to align the x, y, and z axes."""
+    pca = PCA(n_components=3)
+    pca.fit(vertices)
+    aligned_vertices = pca.transform(vertices)
+    return aligned_vertices, pca
 
 def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path):
-    def project_2d_to_3d(u, v, depth, intrinsics, extrinsics):
-        fx = intrinsics['fx']
-        fy = intrinsics['fy']
-        cx = intrinsics['cx']
-        cy = intrinsics['cy']
-
-        z = depth[v, u]
-        if z < 1e-6:  # Skip points with near-zero depth
-            return None
-
-        x = (u - cx) * z / fx
-        y = (v - cy) * z / fy
-        point_3d = np.array([x, y, z, 1.0])
-
-        # Apply the extrinsics to get the 3D point in world coordinates
-        point_3d_world = np.dot(extrinsics, point_3d)
-
-        return point_3d_world[:3]
-
     # Load the masks and mask colors
     best_masks = np.load(masks_path)
     mask_colors = np.load(colors_path)
@@ -82,25 +92,67 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
     combined_pcd.points = o3d.utility.Vector3dVector(points_3d)
     combined_pcd.colors = o3d.utility.Vector3dVector(colors)
 
-    # Save the combined point cloud
-    masked_point_cloud = params_path.replace("_params.json", "_masked_point_cloud.ply")
-    o3d.io.write_point_cloud(masked_point_cloud, combined_pcd)
+    # Load the mesh from the obj_path
+    mesh = o3d.io.read_triangle_mesh(obj_path, enable_post_processing=True)
+    mesh.compute_vertex_normals()
+    mesh_vertices = np.asarray(mesh.vertices)
 
-    # Visualize the combined point cloud
-    o3d.visualization.draw_geometries([combined_pcd])
+    # Center both the mesh and the point cloud
+    mesh_vertices_centered, mesh_center = center_data(mesh_vertices)
+    points_3d_centered, pcd_center = center_data(points_3d)
 
-    return masked_point_cloud
+    # Apply the centering to the mesh
+    mesh.vertices = o3d.utility.Vector3dVector(mesh_vertices_centered)
+
+    # Find the rotation matrix for the mesh vertices
+    rotation_matrix = find_rotation_matrix(mesh_vertices_centered)
+
+    # Apply the rotation matrix to the mesh
+    mesh_vertices_rotated = np.dot(mesh_vertices_centered, rotation_matrix.T)
+    mesh.vertices = o3d.utility.Vector3dVector(mesh_vertices_rotated)
+
+    # Also rotate the point cloud points using the same matrix
+    points_3d_rotated = np.dot(points_3d_centered, rotation_matrix.T)
+    combined_pcd.points = o3d.utility.Vector3dVector(points_3d_rotated)
+
+    # Initialize the mesh colors with the original mesh vertex colors
+    if mesh.has_vertex_colors():
+        mesh_colors = np.asarray(mesh.vertex_colors)
+    else:
+        mesh_colors = np.ones_like(mesh_vertices_rotated)  # Default to white if no colors are available
+
+    # Create a KDTree for fast nearest-neighbor lookup
+    pcd_tree = o3d.geometry.KDTreeFlann(combined_pcd)
+
+    for i, vertex in enumerate(mesh_vertices_rotated):
+        # Find the nearest point in the point cloud
+        _, idx, _ = pcd_tree.search_knn_vector_3d(vertex, 1)
+        nearest_color = np.asarray(combined_pcd.colors)[idx[0]]
+
+        # Assign the color of the nearest point to the mesh vertex only if the color is not black
+        if not np.all(nearest_color == [0, 0, 0]):
+            mesh_colors[i] = nearest_color
+
+    # Apply the colors to the mesh
+    mesh.vertex_colors = o3d.utility.Vector3dVector(mesh_colors)
+
+    # Save the colored mesh
+    colored_mesh_path = params_path.replace("_params.json", "_colored_mesh.obj")
+    o3d.io.write_triangle_mesh(colored_mesh_path, mesh)
+
+    # Visualize the colored mesh
+    o3d.visualization.draw_geometries([mesh])
+
+    return colored_mesh_path
+
+
 if __name__ == '__main__':
     # Usage
-    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/S01/S01.obj'
+    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/valid_models/S01/S01.obj'
     params_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_params.json'
     masks_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_masks.npy'
     colors_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_colors.npy'
     depth_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_depth.npy'
 
-    # Usage
-    project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path)
-
-    # Visualize or save the result
-    # o3d.visualization.draw_geometries([colored_mesh])
-    # # o3d.io.write_triangle_mesh("colored_mesh.obj", colored_mesh)
+    # Generate the colored mesh
+    colored_mesh_path = project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path)
