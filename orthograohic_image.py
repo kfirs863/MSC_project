@@ -4,14 +4,14 @@ import matplotlib.pyplot as plt
 from utils import *
 
 
-def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor=0.5, yaw_angle_degrees=0):
+def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor=0.5, yaw_angle_degrees=0, use_super_resolution=False):
     rotated_mesh, rotation_matrix = preprocess_mesh(obj_path, flip_z, yaw_angle_degrees)
 
     # Color the mesh by vertex normals
     color_mesh_by_vertex_normals(rotated_mesh)
 
     vis = o3d.visualization.Visualizer()
-    vis.create_window(visible=False, width=1920, height=1080)
+    vis.create_window(visible=False, width=512, height=512)
     vis.add_geometry(rotated_mesh)
 
     ctr = vis.get_view_control()
@@ -67,13 +67,26 @@ def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor
     # Enhance the captured image
     image_np = enhance_image(image_np)
 
+    # Apply super-resolution if the flag is set
+    if use_super_resolution:
+        super_resolution_factor = 2
+        image_np = super_resolution(image_np, factor=super_resolution_factor)
+
+        # Update camera intrinsics after super-resolution
+        camera_intrinsics['fx'] *= super_resolution_factor
+        camera_intrinsics['fy'] *= super_resolution_factor
+        camera_intrinsics['cx'] *= super_resolution_factor
+        camera_intrinsics['cy'] *= super_resolution_factor
+
+        # Resize the depth map to match the new resolution
+        depth_np = cv2.resize(depth_np, (depth_np.shape[1] * super_resolution_factor, depth_np.shape[0] * super_resolution_factor), interpolation=cv2.INTER_LINEAR)
+
     obj_stem = os.path.splitext(os.path.basename(obj_path))[0]
     output_image_path, output_depth_path, output_params_path = save_image_and_params(image_np, depth_np, obj_stem,
                                                                                      rotation_matrix, camera_intrinsics,
                                                                                      extrinsic)
 
     return output_image_path, output_depth_path, output_params_path
-
 
 if __name__ == '__main__':
     obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Herald_Staircase right-20240803T111334Z-001/Herald_Staircase right/Coat of Arms Agisoft/COA.obj'

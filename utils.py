@@ -4,6 +4,14 @@ import open3d as o3d
 import numpy as np
 from sklearn.decomposition import PCA
 import cv2
+
+import torch
+from PIL import Image, ImageEnhance
+import numpy as np
+from RealESRGAN import RealESRGAN
+
+
+
 def find_rotation_matrix(vertices, flip_z=True):
     """Find the rotation matrix to align the dominant plane of the point cloud with the XY plane."""
     pca = PCA(n_components=3)
@@ -94,10 +102,51 @@ def color_mesh_by_vertex_normals(mesh):
     colors = (normals + 1) / 2  # Normalize normals to the range [0, 1]
     mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
 
-def enhance_image(image_np):
-    """Enhance the image to make surface engravings more clear."""
-    # Create the sharpening kernel
-    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-    image_np = cv2.filter2D(image_np, -1, kernel)
+def super_resolution(input_image, factor=2):
+    device = torch.device('cpu')
 
-    return image_np
+    model = RealESRGAN(device, scale=factor)
+    model.load_weights(f'weights/RealESRGAN_x{factor}.pth', download=False)
+
+    # Convert numpy array to PIL Image
+    image = Image.fromarray(input_image)
+
+    # Apply super-resolution
+    sr_image = model.predict(image)
+
+    # Convert back to numpy array
+    sr_image_np = np.array(sr_image)
+
+    return sr_image_np
+
+def enhance_image(image_np, sharpness=4, contrast=1.3, blur=3):
+    """Enhance image sharpness, contrast, and blur.
+
+    Args:
+        image_np (np.array): Input image as a NumPy array.
+        sharpness (float, optional): Sharpness level. Defaults to 4.
+        contrast (float, optional): Contrast level. Defaults to 1.3.
+        blur (int, optional): Blur level. Defaults to 3.
+
+    Returns:
+        np.array: Enhanced image as a NumPy array.
+    """
+
+    # Convert the image to PIL Image
+    pil_img = Image.fromarray(image_np)
+
+    # Enhance the sharpness
+    enhancer = ImageEnhance.Sharpness(pil_img)
+    img_enhanced = enhancer.enhance(sharpness)
+
+    # Enhance the contrast
+    enhancer = ImageEnhance.Contrast(img_enhanced)
+    img_enhanced = enhancer.enhance(contrast)
+
+    # Convert back to OpenCV image (numpy array)
+    img_enhanced = np.array(img_enhanced)
+
+    # Apply a small amount of Gaussian blur
+    img_enhanced = cv2.GaussianBlur(img_enhanced, (blur, blur), 0)
+
+    return img_enhanced
