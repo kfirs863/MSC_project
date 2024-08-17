@@ -8,7 +8,7 @@ import cv2
 import torch
 from PIL import Image, ImageEnhance
 import numpy as np
-from RealESRGAN import RealESRGAN
+
 
 
 
@@ -19,12 +19,12 @@ def center_data(vertices):
     return centered_vertices, center
 
 
-def find_rotation_matrix(vertices: np.array, flip_z: bool = True):
+def find_rotation_matrix(vertices: np.array):
     """Find the rotation matrix to align the dominant plane of the point cloud with the XY plane."""
     pca = PCA(n_components=3)
     pca.fit(vertices)
     normal = pca.components_[2]  # The normal to the plane is the last principal component
-    z_axis = np.array([0, 0, -1]) if flip_z else np.array([0, 0, 1])
+    z_axis = np.array([0, 0, 1])
 
     # Compute the rotation matrix to align the normal with the z-axis
     v = np.cross(normal, z_axis)
@@ -73,11 +73,11 @@ def preprocess_mesh(obj_path, flip_z=True, yaw_angle_degrees=0):
 
     mesh.compute_vertex_normals()
     vertices = np.asarray(mesh.vertices)
-    rotation_matrix = find_rotation_matrix(vertices, flip_z)
+    rotation_matrix = find_rotation_matrix(vertices)
     rotated_vertices = np.dot(vertices, rotation_matrix.T)
 
     # Apply yaw rotation
-    rotated_vertices = rotate_yaw(rotated_vertices, yaw_angle_degrees)
+    # rotated_vertices = rotate_yaw(rotated_vertices, yaw_angle_degrees)
     mesh.vertices = o3d.utility.Vector3dVector(rotated_vertices)
 
     return mesh, rotation_matrix
@@ -110,6 +110,7 @@ def color_mesh_by_vertex_normals(mesh):
     mesh.vertex_colors = o3d.utility.Vector3dVector(colors)
 
 def super_resolution(input_image, factor=2):
+    from RealESRGAN import RealESRGAN
     device = torch.device('cpu')
 
     model = RealESRGAN(device, scale=factor)

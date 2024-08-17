@@ -5,10 +5,16 @@ import json
 from sklearn.decomposition import PCA
 from tqdm import tqdm
 
-from utils import find_rotation_matrix, center_data
+from utils import find_rotation_matrix, center_data, preprocess_mesh
 
 
-def project_2d_to_3d(u, v, depth, intrinsics, extrinsics):
+rotation_back_to_open3d = np.array([
+    [1,  0,  0],   # X-axis remains the same
+    [0, -1,  0],   # Y-axis is inverted
+    [0,  0, -1]    # Z-axis is inverted
+])
+
+def project_2d_to_3d(u, v, depth, intrinsics, extrinsic):
     fx = intrinsics['fx']
     fy = intrinsics['fy']
     cx = intrinsics['cx']
@@ -22,8 +28,8 @@ def project_2d_to_3d(u, v, depth, intrinsics, extrinsics):
     y = (v - cy) * z / fy
     point_3d = np.array([x, y, z, 1.0])
 
-    # Apply the extrinsics to get the 3D point in world coordinates
-    point_3d_world = np.dot(extrinsics, point_3d)
+    # Apply the extrinsic to get the 3D point in world coordinates
+    point_3d_world = np.dot(extrinsic, point_3d)
 
     return point_3d_world[:3]
 
@@ -92,39 +98,41 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
     combined_pcd.points = o3d.utility.Vector3dVector(points_3d)
     combined_pcd.colors = o3d.utility.Vector3dVector(colors)
 
+
     # Load the mesh from the obj_path
-    mesh = o3d.io.read_triangle_mesh(obj_path, enable_post_processing=True)
-    mesh.compute_vertex_normals()
+    mesh, rotation_matrix_mesh = preprocess_mesh(obj_path)
     mesh_vertices = np.asarray(mesh.vertices)
+
+    # Rotate the combined point cloud using the rotation matrix
+    # points_3d_rotated = np.dot(points_3d, rotation_matrix.T)
+    # points_3d_rotated = np.dot(rotation_back_to_open3d, points_3d_rotated.T).T
+    # combined_pcd.points = o3d.utility.Vector3dVector(points_3d_rotated)
+
+    # Visualize the combined point cloud and the mesh
+    o3d.visualization.draw_geometries([combined_pcd, mesh])
 
     # Center both the mesh and the point cloud
     mesh_vertices_centered, mesh_center = center_data(mesh_vertices)
     points_3d_centered, pcd_center = center_data(points_3d)
 
-    # Apply the centering to the mesh
+    # Apply the centering to the mesh and the point cloud
     mesh.vertices = o3d.utility.Vector3dVector(mesh_vertices_centered)
+    combined_pcd.points = o3d.utility.Vector3dVector(points_3d_centered)
 
-    # Find the rotation matrix for the mesh vertices
-    rotation_matrix = find_rotation_matrix(mesh_vertices_centered)
-
-    # Apply the rotation matrix to the mesh
-    mesh_vertices_rotated = np.dot(mesh_vertices_centered, rotation_matrix.T)
-    mesh.vertices = o3d.utility.Vector3dVector(mesh_vertices_rotated)
-
-    # Also rotate the point cloud points using the same matrix
-    points_3d_rotated = np.dot(points_3d_centered, rotation_matrix.T)
-    combined_pcd.points = o3d.utility.Vector3dVector(points_3d_rotated)
 
     # Initialize the mesh colors with the original mesh vertex colors
     if mesh.has_vertex_colors():
         mesh_colors = np.asarray(mesh.vertex_colors)
     else:
-        mesh_colors = np.ones_like(mesh_vertices_rotated)  # Default to white if no colors are available
+        mesh_colors = np.ones_like(mesh_vertices_centered)  # Default to white if no colors are available
+
+    # Visualize the combined point cloud and the mesh
+    o3d.visualization.draw_geometries([combined_pcd, mesh])
 
     # Create a KDTree for fast nearest-neighbor lookup
     pcd_tree = o3d.geometry.KDTreeFlann(combined_pcd)
 
-    for i, vertex in enumerate(mesh_vertices_rotated):
+    for i, vertex in tqdm(enumerate(mesh.vertices), desc="Assigning colors to mesh vertices"):
         # Find the nearest point in the point cloud
         _, idx, _ = pcd_tree.search_knn_vector_3d(vertex, 1)
         nearest_color = np.asarray(combined_pcd.colors)[idx[0]]

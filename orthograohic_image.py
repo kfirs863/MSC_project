@@ -7,6 +7,9 @@ from utils import *
 def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor=0.5, yaw_angle_degrees=0, use_super_resolution=False):
     rotated_mesh, rotation_matrix = preprocess_mesh(obj_path, flip_z, yaw_angle_degrees)
 
+    # Visualize the mesh
+    o3d.visualization.draw_geometries([rotated_mesh])
+
     # Color the mesh by vertex normals
     color_mesh_by_vertex_normals(rotated_mesh)
 
@@ -16,13 +19,13 @@ def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor
 
     ctr = vis.get_view_control()
     bounds = rotated_mesh.get_axis_aligned_bounding_box()
-    center = bounds.get_center()
+    center = rotated_mesh.get_center()
     extent = bounds.get_extent()
     camera_distance = max(extent) * 1.5
 
     lookat = center
-    front = [0, 0, -1]
-    up = [0, -1, 0]
+    front = [0, 0, 1]
+    up = [0, 1, 0]
 
     pinhole_parameters = ctr.convert_to_pinhole_camera_parameters()
     extrinsic = np.array(pinhole_parameters.extrinsic)
@@ -89,9 +92,9 @@ def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor
     return output_image_path, output_depth_path, output_params_path
 
 if __name__ == '__main__':
-    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Herald_Staircase right-20240803T111334Z-001/Herald_Staircase right/Coat of Arms Agisoft/COA.obj'
+    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/valid_models/S01/S01.obj'
     # obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Crosses on Staircase left/staircase_left.obj'
-    output_image_path, output_depth_path, output_params_path = capture_textured_image_and_depth_from_obj(obj_path,zoom_factor=0.30)
+    output_image_path, output_depth_path, output_params_path = capture_textured_image_and_depth_from_obj(obj_path,zoom_factor=0.50)
     print(f"Image saved to: {output_image_path}")
     print(f"Camera intrinsics saved: {output_params_path}")
     # Load and display the image
