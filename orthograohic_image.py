@@ -10,11 +10,14 @@ def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor
     # Visualize the mesh
     o3d.visualization.draw_geometries([rotated_mesh])
 
+    rotated_mesh = rotated_mesh.filter_smooth_simple(number_of_iterations=1)
+    rotated_mesh.compute_vertex_normals()
+
     # Color the mesh by vertex normals
-    color_mesh_by_vertex_normals(rotated_mesh)
+    # color_mesh_by_vertex_normals(rotated_mesh)
 
     vis = o3d.visualization.Visualizer()
-    vis.create_window(visible=False, width=512, height=512)
+    vis.create_window(visible=False, width=1024, height=1024)
     vis.add_geometry(rotated_mesh)
 
     ctr = vis.get_view_control()
