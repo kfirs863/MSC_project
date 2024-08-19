@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 from utils import *
 
 
-def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor=0.5, yaw_angle_degrees=0, use_super_resolution=False):
-    rotated_mesh, rotation_matrix = preprocess_mesh(obj_path, flip_z, yaw_angle_degrees)
+def capture_textured_image_and_depth_from_obj(obj_path, zoom_factor=0.5, use_super_resolution=False):
+    rotated_mesh, rotation_matrix = preprocess_mesh(obj_path)
 
     # Visualize the mesh
     o3d.visualization.draw_geometries([rotated_mesh])
@@ -33,15 +33,6 @@ def capture_textured_image_and_depth_from_obj(obj_path, flip_z=True, zoom_factor
     pinhole_parameters = ctr.convert_to_pinhole_camera_parameters()
     extrinsic = np.array(pinhole_parameters.extrinsic)
     extrinsic[:3, 3] = -np.array([0, 0, camera_distance])
-
-    # Apply yaw rotation to the extrinsic matrix
-    yaw_rotation = np.eye(4)
-    angle_radians = np.radians(yaw_angle_degrees)
-    yaw_rotation[0, 0] = np.cos(angle_radians)
-    yaw_rotation[0, 1] = -np.sin(angle_radians)
-    yaw_rotation[1, 0] = np.sin(angle_radians)
-    yaw_rotation[1, 1] = np.cos(angle_radians)
-    extrinsic = yaw_rotation @ extrinsic
 
     pinhole_parameters.extrinsic = extrinsic
     ctr.convert_from_pinhole_camera_parameters(pinhole_parameters)
