@@ -58,7 +58,7 @@ def rotate_mesh(mesh, rotation_matrix):
     mesh.vertices = o3d.utility.Vector3dVector(rotated_vertices)
     return mesh
 
-def preprocess_mesh(obj_path, flip_z=True, yaw_angle_degrees=0):
+def preprocess_mesh(obj_path):
     """Load and preprocess the mesh by rotating it to align with the Z axis and then applying a yaw rotation."""
     try:
         mesh = o3d.io.read_triangle_mesh(obj_path, enable_post_processing=True)
@@ -76,8 +76,6 @@ def preprocess_mesh(obj_path, flip_z=True, yaw_angle_degrees=0):
     rotation_matrix = find_rotation_matrix(vertices)
     rotated_vertices = np.dot(vertices, rotation_matrix.T)
 
-    # Apply yaw rotation
-    # rotated_vertices = rotate_yaw(rotated_vertices, yaw_angle_degrees)
     mesh.vertices = o3d.utility.Vector3dVector(rotated_vertices)
 
     return mesh, rotation_matrix

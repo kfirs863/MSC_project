@@ -1,3 +1,5 @@
+import time
+
 import open3d as o3d
 import numpy as np
 import json
@@ -7,13 +9,6 @@ from tqdm import tqdm
 
 from utils import find_rotation_matrix, center_data, preprocess_mesh
 
-
-rotation_back_to_open3d = np.array([
-    [1,  0,  0],   # X-axis remains the same
-    [0, -1,  0],   # Y-axis is inverted
-    [0,  0, -1]    # Z-axis is inverted
-])
-
 def project_2d_to_3d(u, v, depth, intrinsics, extrinsic):
     fx = intrinsics['fx']
     fy = intrinsics['fy']
@@ -21,7 +16,7 @@ def project_2d_to_3d(u, v, depth, intrinsics, extrinsic):
     cy = intrinsics['cy']
 
     z = depth[v, u]
-    if z < 1e-6:  # Skip points with near-zero depth
+    if not z:  # Skip points with zero depth
         return None
 
     x = (u - cx) * z / fx
@@ -29,16 +24,9 @@ def project_2d_to_3d(u, v, depth, intrinsics, extrinsic):
     point_3d = np.array([x, y, z, 1.0])
 
     # Apply the extrinsic to get the 3D point in world coordinates
-    point_3d_world = np.dot(extrinsic, point_3d)
+    point_3d_world = np.dot(np.linalg.inv(extrinsic), point_3d)
 
     return point_3d_world[:3]
-
-def center_and_align(vertices):
-    """Center and align the vertices using PCA to align the x, y, and z axes."""
-    pca = PCA(n_components=3)
-    pca.fit(vertices)
-    aligned_vertices = pca.transform(vertices)
-    return aligned_vertices, pca
 
 def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path):
     # Load the masks and mask colors
@@ -101,33 +89,17 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
 
     # Load the mesh from the obj_path
     mesh, rotation_matrix_mesh = preprocess_mesh(obj_path)
-    mesh_vertices = np.asarray(mesh.vertices)
 
-    # Rotate the combined point cloud using the rotation matrix
-    # points_3d_rotated = np.dot(points_3d, rotation_matrix.T)
-    # points_3d_rotated = np.dot(rotation_back_to_open3d, points_3d_rotated.T).T
-    # combined_pcd.points = o3d.utility.Vector3dVector(points_3d_rotated)
 
     # Visualize the combined point cloud and the mesh
-    o3d.visualization.draw_geometries([combined_pcd, mesh])
-
-    # Center both the mesh and the point cloud
-    mesh_vertices_centered, mesh_center = center_data(mesh_vertices)
-    points_3d_centered, pcd_center = center_data(points_3d)
-
-    # Apply the centering to the mesh and the point cloud
-    mesh.vertices = o3d.utility.Vector3dVector(mesh_vertices_centered)
-    combined_pcd.points = o3d.utility.Vector3dVector(points_3d_centered)
+    # o3d.visualization.draw_geometries([combined_pcd, mesh])
 
 
     # Initialize the mesh colors with the original mesh vertex colors
     if mesh.has_vertex_colors():
         mesh_colors = np.asarray(mesh.vertex_colors)
     else:
-        mesh_colors = np.ones_like(mesh_vertices_centered)  # Default to white if no colors are available
-
-    # Visualize the combined point cloud and the mesh
-    o3d.visualization.draw_geometries([combined_pcd, mesh])
+        mesh_colors = np.ones_like(mesh.vertices)  # Default to white if no colors are available
 
     # Create a KDTree for fast nearest-neighbor lookup
     pcd_tree = o3d.geometry.KDTreeFlann(combined_pcd)
@@ -157,10 +129,10 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
 if __name__ == '__main__':
     # Usage
     obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/valid_models/S01/S01.obj'
-    params_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_params.json'
+    params_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/images/S01_params.json'
     masks_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_masks.npy'
     colors_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_colors.npy'
-    depth_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_depth.npy'
+    depth_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/images/S01_depth.npy'
 
     # Generate the colored mesh
     colored_mesh_path = project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path)
