@@ -38,7 +38,6 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
         params = json.load(f)
 
     camera_intrinsics = params['camera_intrinsics']
-    rotation_matrix = np.array(params['rotation_matrix'])
     extrinsic = np.array(params['extrinsic'])
 
     # Load the depth image
@@ -72,7 +71,7 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
     # Process the black mask
     black_mask_indices = np.argwhere(black_mask)
 
-    for v, u in tqdm(black_mask_indices, desc="Processing black mask"):
+    for v, u in tqdm(black_mask_indices, desc="Processing non-masked areas"):
         point_3d = project_2d_to_3d(u, v, depth_np, camera_intrinsics, extrinsic)
         if point_3d is not None:
             points_3d.append(point_3d)
@@ -114,10 +113,15 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
             mesh_colors[i] = nearest_color
 
     # Apply the colors to the mesh
+    mesh = mesh.filter_sharpen(number_of_iterations=1, strength=0.01)
     mesh.vertex_colors = o3d.utility.Vector3dVector(mesh_colors)
+    mesh.compute_vertex_normals()
+
+    # Optional: Recompute vertex normals if needed
+    # mesh.compute_vertex_normals()
 
     # Save the colored mesh
-    colored_mesh_path = params_path.replace("_params.json", "_colored_mesh.obj")
+    colored_mesh_path = params_path.replace("_params.json", "_colored_mesh.ply")
     o3d.io.write_triangle_mesh(colored_mesh_path, mesh)
 
     # Visualize the colored mesh
@@ -128,11 +132,11 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
 
 if __name__ == '__main__':
     # Usage
-    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/valid_models/S01/S01.obj'
-    params_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/images/S01_params.json'
-    masks_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_masks.npy'
-    colors_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/S01_ortho_colors.npy'
-    depth_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/images/S01_depth.npy'
+    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/valid_models/Crosses on Staircase left/staircase_left.obj'
+    params_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/staircase_left_params.json'
+    masks_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/staircase_left_ortho_masks.npy'
+    colors_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/staircase_left_ortho_colors.npy'
+    depth_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/notebook/images/staircase_left_depth.npy'
 
     # Generate the colored mesh
     colored_mesh_path = project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_path)
