@@ -6,11 +6,9 @@ import numpy as np
 from tools.utils import *
 
 
-def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0,number_of_iterations=1,use_sharpen=True,strength=0.01):
+def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0, number_of_iterations=1, use_sharpen=True, strength=0.01, disable_reflection=False):
     rotated_mesh, rotation_matrix = preprocess_mesh(obj_path)
 
-    # Visualize the mesh
-    # o3d.visualization.draw_geometries([rotated_mesh])
     if number_of_iterations > 0:
         if use_sharpen:
             rotated_mesh = rotated_mesh.filter_sharpen(number_of_iterations=number_of_iterations, strength=strength)
@@ -20,20 +18,24 @@ def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0,number_of_itera
             rotated_mesh.compute_vertex_normals()
 
     # Color the mesh by vertex normals
-    # color_mesh_by_vertex_normals(rotated_mesh)
     resolution = 1024
     vis = o3d.visualization.Visualizer()
     vis.create_window(visible=False, width=resolution, height=resolution)
     vis.add_geometry(rotated_mesh)
 
+    if disable_reflection:
+        # Disable specular reflection and adjust render options
+        opt = vis.get_render_option()
+        opt.light_on = False  # Disable default lighting
+
+
     ctr = vis.get_view_control()
     bounds = rotated_mesh.get_axis_aligned_bounding_box()
     center = bounds.get_center()
 
-
     lookat = center
     front = [0, 0, 1]
-    up = [-1,0, 0]
+    up = [-1, 0, 0]
 
     ctr.set_lookat(lookat)
     ctr.set_front(front)
@@ -71,9 +73,9 @@ def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0,number_of_itera
     return output_image_path, output_depth_path, output_params_path
 
 if __name__ == '__main__':
-    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/wall 5-20240803T111405Z-001/wall 5/wall 5/5_3D/5_HR.obj'
+    obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/cross2_mask_8/mask.ply'
     # obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Crosses on Staircase left/staircase_left.obj'
-    output_image_path, output_depth_path, output_params_path = capture_textured_image_and_depth_from_obj(obj_path,zoom=0.4,number_of_iterations=0,strength=0)
+    output_image_path, output_depth_path, output_params_path = capture_textured_image_and_depth_from_obj(obj_path,zoom=0.5,number_of_iterations=0,strength=0.01,disable_reflection=True)
     print(f"Image saved to: {output_image_path}")
     print(f"Camera intrinsics saved: {output_params_path}")
     # Load and display the image

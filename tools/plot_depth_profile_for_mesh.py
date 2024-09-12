@@ -8,11 +8,7 @@ import matplotlib.cm as cm
 from scipy.interpolate import interp1d
 import os
 
-
-def preprocess_and_align_mesh(mesh):
-    # Recompute normals to ensure they are consistent
-    mesh.compute_vertex_normals()
-    return mesh
+from tools.utils import extract_xyz_from_ply
 
 
 def plot_depth_profile_for_mesh(folder_path, num_sections=50, smoothing_sigma=20):
@@ -27,28 +23,7 @@ def plot_depth_profile_for_mesh(folder_path, num_sections=50, smoothing_sigma=20
     if not ply_file:
         raise FileNotFoundError("No .ply file found in the specified folder.")
 
-    # Load the mesh
-    mesh = o3d.io.read_triangle_mesh(ply_file)
-
-    if mesh.is_empty():
-        raise ValueError(f"Mesh {ply_file} is empty or could not be loaded.")
-
-    # Preprocess and align the mesh
-    mesh = preprocess_and_align_mesh(mesh)
-
-
-    # Subdivide the mesh to increase the number of points
-    mesh = mesh.subdivide_midpoint(
-        number_of_iterations=4)  # Adjust the number of iterations for finer mesh
-
-
-    # Convert mesh vertices to a numpy array
-    vertices = np.asarray(mesh.vertices)
-
-    # Extract the X, Y, Z coordinates
-    X = vertices[:, 0]
-    Y = vertices[:, 1]
-    Z = vertices[:, 2]
+    X,Y,Z = extract_xyz_from_ply(ply_file)
 
     # Set the highest point as zero by subtracting the maximum Z value from all Z values
     max_z = np.max(Z)

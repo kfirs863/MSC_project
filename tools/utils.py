@@ -29,7 +29,6 @@ def find_rotation_matrix(vertices: np.array):
     return rotation_matrix
 
 
-
 def rotate_mesh(mesh, rotation_matrix):
     """Apply a rotation to the mesh."""
     vertices = np.asarray(mesh.vertices)
@@ -47,8 +46,8 @@ def preprocess_mesh(obj_path):
     if not mesh.has_triangles():
         raise ValueError("The mesh does not contain any triangles.")
 
-    if not mesh.has_textures():
-        raise ValueError("The mesh does not contain textures.")
+    # if not mesh.has_textures():
+    #     raise ValueError("The mesh does not contain textures.")
 
     mesh.compute_vertex_normals()
     vertices = np.asarray(mesh.vertices)
@@ -61,7 +60,7 @@ def preprocess_mesh(obj_path):
 
 def save_image_and_params(image_np, depth_np, obj_stem, rotation_matrix, camera_intrinsics, extrinsic):
     """Save the captured image and camera parameters."""
-    os.makedirs("../images", exist_ok=True)
+    os.makedirs("./images", exist_ok=True)
     output_image_path = f"./images/{obj_stem}_ortho.png"
     output_depth_path = f"./images/{obj_stem}_depth.npy"
     cv2.imwrite(output_image_path, image_np)
@@ -77,7 +76,6 @@ def save_image_and_params(image_np, depth_np, obj_stem, rotation_matrix, camera_
         json.dump(params, f, indent=4)
 
     return output_image_path, output_depth_path, output_params_path
-
 
 def enhance_image(image_np, sharpness=4, contrast=1.3, blur=3):
     """Enhance image sharpness, contrast, and blur.
@@ -124,6 +122,32 @@ def display_masked_areas(output_dir):
                 print(f"Skipped empty mesh file: {file}")
                 continue
             masked_mesh.compute_vertex_normals()
-            o3d.visualization.draw_geometries([masked_mesh], window_name=f"Masked Area {i}")
+            o3d.visualization.draw_geometries([masked_mesh], window_name=f"Masked Area {i}",mesh_show_back_face=True)
 
     print(f"Displayed {len(files)} masked areas.")
+
+def extract_xyz_from_ply(ply_file,number_of_iterations=4):
+    """Extract the XYZ coordinates from a PLY file."""
+    # Load the mesh
+    mesh = o3d.io.read_triangle_mesh(ply_file)
+
+    if mesh.is_empty():
+        raise ValueError(f"Mesh {ply_file} is empty or could not be loaded.")
+
+    # Preprocess and align the mesh
+    mesh.compute_vertex_normals()
+
+
+    # Subdivide the mesh to increase the number of points
+    mesh = mesh.subdivide_midpoint(
+        number_of_iterations=number_of_iterations)  # Adjust the number of iterations for finer mesh
+
+    # Convert mesh vertices to a numpy array
+    vertices = np.asarray(mesh.vertices)
+
+    # Extract the X, Y, Z coordinates
+    X = vertices[:, 0]
+    Y = vertices[:, 1]
+    Z = vertices[:, 2]
+
+    return X, Y, Z
