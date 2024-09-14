@@ -8,6 +8,7 @@ import torchvision.transforms as transforms
 import trimesh
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 import matplotlib.pyplot as plt
@@ -92,47 +93,104 @@ def normalize_mesh(mesh):
 def compute_approximate_curvature(mesh):
     """Compute approximate curvature for a surface mesh using vertex normals and their neighbors."""
     # Ensure vertex normals are computed
-    mesh.rezero()
-    mesh.fix_normals()
+    if not hasattr(mesh, 'vertex_normals') or len(mesh.vertex_normals) == 0:
+        mesh.vertex_normals = mesh.vertex_normals
 
     # Get vertex neighbors (adjacent vertices)
-    adjacency = mesh.vertex_adjacency_graph
+    neighbors_list = mesh.vertex_neighbors  # List of arrays
 
-    # Compute curvature as the difference between vertex normals of adjacent vertices
+    # Compute curvature as the variation of normals among neighboring vertices
     normals = mesh.vertex_normals
     curvature = []
 
     for vertex_idx in range(len(normals)):
-        neighbors = adjacency[vertex_idx]
+        neighbors = neighbors_list[vertex_idx]
+        if len(neighbors) == 0:
+            curvature.append(0)
+            continue
         normal_variations = [np.linalg.norm(normals[vertex_idx] - normals[neighbor]) for neighbor in neighbors]
         curvature.append(np.mean(normal_variations))
 
     return np.array(curvature)
 
+
 def extract_geometric_features(meshes):
-    """Extract geometric features like volume, surface area, PCA components, curvature, etc."""
+    """Extract enhanced geometric features from meshes without volume-dependent features."""
     features = []
 
     for mesh in meshes:
-        # Normalize the mesh to remove size differences
+        # Normalize the mesh to remove position differences
         mesh = normalize_mesh(mesh)
 
         # Surface area of the mesh
         surface_area = mesh.area
 
+        # Bounding box dimensions
+        bounding_box = mesh.bounds  # Shape (2, 3): min and max
+        bbox_size = bounding_box[1] - bounding_box[0]  # Size along each axis
+
+        # Aspect ratios of the bounding box
+        bbox_aspect_ratios = [
+            bbox_size[0] / bbox_size[1] if bbox_size[1] != 0 else 0,
+            bbox_size[1] / bbox_size[2] if bbox_size[2] != 0 else 0,
+            bbox_size[0] / bbox_size[2] if bbox_size[2] != 0 else 0
+        ]
+
+        # Surface area to bounding box volume ratio
+        bbox_volume = np.prod(bbox_size) if np.prod(bbox_size) != 0 else 1
+        sa_to_bbox_volume_ratio = surface_area / bbox_volume
+
         # PCA on vertices to capture shape information
         verts = mesh.vertices
-        pca = PCA(n_components=min(verts.shape[0], 3))  # Get the top 3 PCA components
+        pca = PCA(n_components=3)
         pca.fit(verts)
-        pca_components = pca.explained_variance_ratio_
+        eigenvalues = pca.explained_variance_  # Variances along principal components
+        eigenvalues_ratio = eigenvalues / np.sum(eigenvalues)
+
+        # Ratios of eigenvalues
+        ratios = [
+            eigenvalues[0] / eigenvalues[1] if eigenvalues[1] != 0 else 0,
+            eigenvalues[1] / eigenvalues[2] if eigenvalues[2] != 0 else 0,
+            eigenvalues[0] / eigenvalues[2] if eigenvalues[2] != 0 else 0
+        ]
+
+        # Number of vertices and faces
+        num_vertices = len(mesh.vertices)
+        num_faces = len(mesh.faces)
+
+        # Compute curvature features
+        curvature = compute_approximate_curvature(mesh)
+        mean_curvature = np.mean(curvature)
+        std_curvature = np.std(curvature)
+
+        # Mean edge length and variance
+        edges = mesh.edges_unique_length
+        mean_edge_length = np.mean(edges)
+        std_edge_length = np.std(edges)
+
+        # Face area statistics
+        face_areas = mesh.area_faces
+        mean_face_area = np.mean(face_areas)
+        std_face_area = np.std(face_areas)
 
         # Combine all features into a single vector
-        feature_vector = np.concatenate([[surface_area], pca_components])
+        feature_vector = np.concatenate([
+            [surface_area],
+            bbox_size,  # 3 elements
+            bbox_aspect_ratios,  # 3 elements
+            [sa_to_bbox_volume_ratio],
+            eigenvalues,  # 3 elements
+            eigenvalues_ratio,  # 3 elements
+            ratios,  # 3 elements
+            [num_vertices, num_faces],
+            [mean_curvature, std_curvature],
+            [mean_edge_length, std_edge_length],
+            [mean_face_area, std_face_area]
+        ])
 
         features.append(feature_vector)
 
     return np.vstack(features)
-
 
 def extract_image_features(images):
     """Extract features from images (ndarray) using a pre-trained ResNet model."""
@@ -231,9 +289,9 @@ def main():
     skeleton_features = extract_image_features(skeleton_images)
 
     # Combine all the features: geometric, depth profile, contour, and skeleton
-    combined_features = np.hstack((geometric_features, depth_features, contour_features, skeleton_features))
+    combined_features = np.hstack((geometric_features, contour_features))
 
-    combined_features = depth_features
+    # combined_features = geometric_features
     # Standardize the combined features
     scaler = StandardScaler()
     combined_features = scaler.fit_transform(combined_features)
@@ -243,8 +301,9 @@ def main():
     reduced_features = pca.fit_transform(combined_features)
     print(f"Reduced features shape: {reduced_features.shape}")
 
+
     # Perform clustering on the reduced features
-    num_clusters = 3  # You can adjust the number of clusters as needed
+    num_clusters = 5  # You can adjust the number of clusters as needed
     kmeans = KMeans(n_clusters=num_clusters,n_init=10)
     cluster_labels = kmeans.fit_predict(reduced_features)
 
@@ -256,6 +315,12 @@ def main():
     print(f"Silhouette Score: {silhouette_avg}")
     print(f"Davies-Bouldin Index: {db_score}")
     print(f"KMeans Inertia: {inertia}")
+
+    tsne = TSNE(n_components=2)
+    tsne_results = tsne.fit_transform(reduced_features)
+
+    plt.scatter(tsne_results[:, 0], tsne_results[:, 1], c=cluster_labels, cmap='viridis')
+    plt.show()
 
     # Visualize clustered meshes with their subfolder names
     visualize_clustered_meshes(meshes, cluster_labels, subfolder_names)
