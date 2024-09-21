@@ -6,8 +6,8 @@ import numpy as np
 from tools.utils import *
 
 
-def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0, number_of_iterations=1, use_sharpen=True, strength=0.01, disable_reflection=False):
-    rotated_mesh, rotation_matrix = preprocess_mesh(obj_path)
+def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0, number_of_iterations=1, use_sharpen=True, strength=0.01, disable_reflection=False,with_texture=True):
+    rotated_mesh, rotation_matrix = preprocess_mesh(obj_path,with_texture)
 
     if number_of_iterations > 0:
         if use_sharpen:

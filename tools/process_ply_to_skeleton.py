@@ -70,7 +70,7 @@ def process_ply_to_skeleton(folder_path: str,project_on_mesh: bool = False) -> N
         extract_and_save_masked_areas(colored_mesh_path, output_dir=os.path.dirname(ply_path), label='skeleton')
 
 if __name__ == '__main__':
-    # folder_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/S01_mask_2'
-    # process_ply_to_skeleton(folder_path, project_on_mesh=True)
-    display_masked_areas('/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/S01_mask_2/skeleton_mask_0')
+    folder_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/staircase_left_mask_20'
+    process_ply_to_skeleton(folder_path, project_on_mesh=True)
+    # display_masked_areas('/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/staircase_left_mask_20')
 

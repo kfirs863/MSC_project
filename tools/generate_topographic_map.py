@@ -123,6 +123,16 @@ def generate_topographic_map(folder_path: str, num_contours: int = 1, num_iterat
     return saved_image_paths
 
 if __name__ == '__main__':
-    folder_path ='/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/S01_mask_1' # Specify the folder path containing the .ply file
-    num_contours = 3  # Specify the number of contour lines
-    generate_topographic_map(folder_path=folder_path, num_contours=10, num_iterations=4, mode='equal', normalize=True)
+
+
+
+    # Usage example:
+    root_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets'
+
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        for folder_path in dirnames:
+            folder_path = os.path.join(dirpath, folder_path)
+            generate_topographic_map(folder_path=folder_path, num_contours=5, num_iterations=4, mode='equal')
+
+    # folder_path ='/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/S01_mask_1' # Specify the folder path containing the .ply file
+    # num_contours = 3  # Specify the number of contour lines

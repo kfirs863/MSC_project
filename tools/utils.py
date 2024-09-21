@@ -36,10 +36,10 @@ def rotate_mesh(mesh, rotation_matrix):
     mesh.vertices = o3d.utility.Vector3dVector(rotated_vertices)
     return mesh
 
-def preprocess_mesh(obj_path):
+def preprocess_mesh(obj_path,with_texture=True):
     """Load and preprocess the mesh by rotating it to align with the Z axis and then applying a yaw rotation."""
     try:
-        mesh = o3d.io.read_triangle_mesh(obj_path, enable_post_processing=True)
+        mesh = o3d.io.read_triangle_mesh(obj_path, enable_post_processing=with_texture)
     except Exception as e:
         raise ValueError(f"Error reading the mesh: {e}")
 

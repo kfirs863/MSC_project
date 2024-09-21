@@ -29,10 +29,34 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Normalize with ImageNet stats
 ])
 
+def normalize_mesh(mesh, only_scale=False):
+    """Normalize the mesh for translation, rotation, and scale invariance."""
+
+    # Create a copy of the mesh to avoid modifying the original
+    mesh_copy = mesh.copy()
+
+    if not only_scale:
+
+        # Move the centroid to the origin (translation invariance)
+        centroid = mesh_copy.vertices.mean(axis=0)
+        mesh_copy.vertices -= centroid
+
+        # Apply PCA to align principal axes (rotation invariance)
+        pca = PCA(n_components=3)
+        pca.fit(mesh_copy.vertices)
+        mesh_copy.vertices = np.dot(mesh_copy.vertices, pca.components_.T)
+
+    # Scale the mesh to fit within a unit sphere (scale invariance)
+    scale = np.linalg.norm(mesh_copy.vertices, axis=1).max()
+    mesh_copy.vertices /= scale
+
+    return mesh_copy
+
 
 def load_meshes_and_images_from_folders(datasets_folder):
     """Load meshes and corresponding images from a folder hierarchy, and track subfolder names."""
     meshes = []
+    normalized_meshes = []
     depth_images = []
     contour_images_list = []
     skeleton_images = []
@@ -63,7 +87,10 @@ def load_meshes_and_images_from_folders(datasets_folder):
             if ply_file and depth_image_file and contour_image_files and skeleton_image_file:
                 # Load the mesh using Trimesh instead of Open3D
                 mesh = trimesh.load(ply_file)
+                mesh = normalize_mesh(mesh, only_scale=True)
+                normalized_mesh = normalize_mesh(mesh)
                 meshes.append(mesh)
+                normalized_meshes.append(normalized_mesh)
 
                 # Load the depth profile image
                 depth_image = cv2.imread(depth_image_file, cv2.IMREAD_GRAYSCALE)
@@ -82,13 +109,7 @@ def load_meshes_and_images_from_folders(datasets_folder):
             else:
                 print(f"Missing files in {subfolder_name}: Mask: {ply_file}, Depth: {depth_image_file}, Contours: {len(contour_image_files)} found, Skeleton: {skeleton_image_file}")
 
-    return meshes, depth_images, contour_images_list, skeleton_images, subfolder_names
-
-def normalize_mesh(mesh):
-    """Normalize the mesh to make it scale-invariant."""
-    # Scale the mesh to fit within a unit bounding box (1x1x1)
-    mesh.apply_scale(1 / mesh.scale)
-    return mesh
+    return meshes,normalized_meshes, depth_images, contour_images_list, skeleton_images, subfolder_names
 
 def compute_approximate_curvature(mesh):
     """Compute approximate curvature for a surface mesh using vertex normals and their neighbors."""
@@ -119,9 +140,6 @@ def extract_geometric_features(meshes):
     features = []
 
     for mesh in meshes:
-        # Normalize the mesh to remove position differences
-        mesh = normalize_mesh(mesh)
-
         # Surface area of the mesh
         surface_area = mesh.area
 
@@ -233,14 +251,12 @@ def extract_combined_contour_features(contour_images_list):
 
     return np.array(combined_contour_features)
 
-
 def visualize_clustered_meshes(meshes, cluster_labels, subfolder_names):
-    """Visualize the clustered meshes in 3D, colored by their cluster labels using Open3D."""
+    """Visualize the clustered meshes in 3D, colored by their cluster labels using Open3D and save them."""
     # Create a unique color for each cluster
     num_clusters = len(set(cluster_labels))
     colors = plt.cm.get_cmap('viridis', num_clusters)
 
-    # List to store the Open3D mesh objects with colors applied
     colored_meshes = []
 
     for i, mesh in enumerate(meshes):
@@ -248,7 +264,7 @@ def visualize_clustered_meshes(meshes, cluster_labels, subfolder_names):
         color = colors(cluster_labels[i])[:3]  # Get RGB values in [0, 1] range
         color = np.array(color)  # Ensure it is an array
 
-        # Convert the mesh to Open3D mesh (if needed, depending on the original format)
+        # If the mesh is not already in Open3D format, convert it
         if not isinstance(mesh, o3d.geometry.TriangleMesh):
             mesh_o3d = o3d.geometry.TriangleMesh(vertices=o3d.utility.Vector3dVector(mesh.vertices),
                                                  triangles=o3d.utility.Vector3iVector(mesh.faces))
@@ -258,15 +274,11 @@ def visualize_clustered_meshes(meshes, cluster_labels, subfolder_names):
         # Apply the color to the mesh
         mesh_o3d.paint_uniform_color(color)
 
-        # Append to the list of colored meshes
+        # Append the colored Open3D mesh to the list
         colored_meshes.append(mesh_o3d)
 
-    # Visualize the meshes with Open3D
+    # Visualize the meshes using Open3D
     o3d.visualization.draw_geometries(colored_meshes, window_name="Clustered Meshes", mesh_show_back_face=True)
-
-    # Print out the subfolder names with their corresponding cluster labels
-    for tag, label in zip(subfolder_names, cluster_labels):
-        print(f"Subfolder: {tag}, Cluster label: {label}")
 
 
 def main():
@@ -274,24 +286,18 @@ def main():
     datasets_folder = "/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets"
 
     # Load the meshes and corresponding images from subfolders
-    meshes, depth_images, contour_images_list, skeleton_images, subfolder_names = load_meshes_and_images_from_folders(datasets_folder)
+    meshes, normalized_meshes, depth_images, contour_images_list, skeleton_images, subfolder_names = load_meshes_and_images_from_folders(datasets_folder)
 
     # Extract geometric features from meshes
-    geometric_features = extract_geometric_features(meshes)
-
-    # Extract image features from depth profile images using ResNet
-    depth_features = extract_image_features(depth_images)
+    geometric_features = extract_geometric_features(normalized_meshes)
 
     # Extract and combine features from contour images
     contour_features = extract_combined_contour_features(contour_images_list)
 
-    # Extract features from skeleton images
-    skeleton_features = extract_image_features(skeleton_images)
 
     # Combine all the features: geometric, depth profile, contour, and skeleton
     combined_features = np.hstack((geometric_features, contour_features))
 
-    # combined_features = geometric_features
     # Standardize the combined features
     scaler = StandardScaler()
     combined_features = scaler.fit_transform(combined_features)
@@ -316,10 +322,12 @@ def main():
     print(f"Davies-Bouldin Index: {db_score}")
     print(f"KMeans Inertia: {inertia}")
 
-    tsne = TSNE(n_components=2)
+    # --- t-SNE Visualization ---
+    tsne = TSNE(n_components=2, random_state=42)
     tsne_results = tsne.fit_transform(reduced_features)
 
     plt.scatter(tsne_results[:, 0], tsne_results[:, 1], c=cluster_labels, cmap='viridis')
+    plt.title('t-SNE Clustering Results')
     plt.show()
 
     # Visualize clustered meshes with their subfolder names

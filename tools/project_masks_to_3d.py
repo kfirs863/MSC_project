@@ -122,7 +122,7 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
     o3d.io.write_triangle_mesh(colored_mesh_path, mesh)
 
     # Visualize the colored mesh
-    o3d.visualization.draw_geometries([mesh])
+    o3d.visualization.draw_geometries([mesh], window_name="Colored Mesh",mesh_show_back_face=True)
 
     return colored_mesh_path
 
