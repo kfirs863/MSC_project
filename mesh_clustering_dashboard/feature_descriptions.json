@@ -1,0 +1,17 @@
+{
+    "surface_area": "The total area of the surface of the mesh.",
+    "bbox_size": "Dimensions of the bounding box enclosing the mesh.",
+    "bbox_aspect_ratios": "Aspect ratios of the bounding box dimensions.",
+    "sa_to_bbox_volume_ratio": "Ratio of surface area to volume of the bounding box.",
+    "eigenvalues": "Eigenvalues from PCA decomposition of the mesh vertices.",
+    "eigenvalues_ratio": "Ratios of PCA eigenvalues indicating shape characteristics.",
+    "first_to_second_axis_ratio": "Ratio of the first to second principal axis lengths.",
+    "num_vertices": "Total number of vertices in the mesh.",
+    "num_faces": "Total number of faces in the mesh.",
+    "mean_curvature": "Average curvature across the mesh surface.",
+    "std_curvature": "Standard deviation of curvature across the mesh.",
+    "mean_edge_length": "Average length of the edges in the mesh.",
+    "std_edge_length": "Standard deviation of edge lengths in the mesh.",
+    "mean_face_area": "Average area of the faces in the mesh.",
+    "std_face_area": "Standard deviation of face areas in the mesh."
+}

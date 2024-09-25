@@ -1,39 +1,45 @@
-# main_script.py
+# data_processing.py
 
 import os
 import numpy as np
-import open3d as o3d
+import trimesh
 import cv2
 import torch
 import torchvision.models as models
 import torchvision.transforms as transforms
-import trimesh
-from scipy.sparse import csr_matrix
-from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
-from sklearn.manifold import TSNE
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score, davies_bouldin_score
-import matplotlib.pyplot as plt
 from PIL import Image
+from sklearn.decomposition import PCA
+from scipy.sparse import csr_matrix
+from sklearn.preprocessing import StandardScaler
+import yaml
+from torchvision.models import ResNet50_Weights
 
-# Import visualization functions
-from visualizations import *
 
-# Load a pre-trained ResNet model for image feature extraction
-model = models.resnet50(pretrained=True)
-model.eval()  # Set the model to evaluation mode
+def initialize_resnet_model():
+    """Initialize a pre-trained ResNet model for feature extraction."""
+    # Load the pre-trained ResNet model
+    model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+    # Remove the last fully connected layer
+    model = torch.nn.Sequential(*list(model.children())[:-1])
+    # Set the model to evaluation mode
+    model.eval()
 
-# Remove the final classification layer to get feature vectors
-model = torch.nn.Sequential(*list(model.children())[:-1])
+    # Define the image transformation
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
+    return model, transform
 
-# Define the image transformation (resize, normalize to match ImageNet)
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),  # Resize to match the input size of ResNet
-    transforms.ToTensor(),          # Convert the image to PyTorch tensor
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])  # Normalize with ImageNet stats
-])
+
+def load_config(config_path='config.yaml'):
+    """Load configuration from a YAML file."""
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return config
+
 
 def normalize_mesh(mesh, only_scale=False):
     """Normalize the mesh for translation, rotation, and scale invariance."""
@@ -55,6 +61,7 @@ def normalize_mesh(mesh, only_scale=False):
     mesh_copy.vertices /= scale
 
     return mesh_copy
+
 
 def load_meshes_and_images_from_folders(datasets_folder):
     """Load meshes and corresponding images from a folder hierarchy, and track subfolder names."""
@@ -100,7 +107,8 @@ def load_meshes_and_images_from_folders(datasets_folder):
                 depth_images.append(depth_image)
 
                 # Load all contour images
-                contour_images = [cv2.imread(contour_file, cv2.IMREAD_GRAYSCALE) for contour_file in contour_image_files]
+                contour_images = [cv2.imread(contour_file, cv2.IMREAD_GRAYSCALE) for contour_file in
+                                  contour_image_files]
                 contour_images_list.append(contour_images)
 
                 # Load the skeleton image
@@ -137,7 +145,8 @@ def compute_laplacian_curvature_vectorized(mesh):
     adjacency_matrix = csr_matrix((data, (rows, cols)), shape=(vertex_count, vertex_count))
 
     # Degree matrix: diagonal matrix with the degree of each vertex
-    degree_matrix = csr_matrix((adjacency_matrix.sum(axis=1).A1, (vertex_indices, vertex_indices)), shape=(vertex_count, vertex_count))
+    degree_matrix = csr_matrix((adjacency_matrix.sum(axis=1).A1, (vertex_indices, vertex_indices)),
+                               shape=(vertex_count, vertex_count))
 
     # Laplacian Matrix: L = D - A
     laplacian_matrix = degree_matrix - adjacency_matrix
@@ -159,7 +168,7 @@ def compute_laplacian_curvature_vectorized(mesh):
 
 
 def extract_geometric_features(meshes):
-    """Extract enhanced geometric features from meshes without volume-dependent features."""
+    """Extract geometric features from meshes in a predefined order."""
     features = []
     feature_data = []
 
@@ -194,16 +203,17 @@ def extract_geometric_features(meshes):
         std_edge_length = np.std(edges)
 
         face_areas = mesh.area_faces
-        mean_face_area = np.mean(face_areas)
-        std_face_area = np.std(face_areas)
+        mean_face_area = np.mean(face_areas) if len(face_areas) > 0 else 0  # Handle empty case
+        std_face_area = np.std(face_areas) if len(face_areas) > 0 else 0  # Handle empty case
 
+        # Ensure all features are 1D arrays for concatenation
         feature_vector = np.concatenate([
             [surface_area],
-            bbox_size,
+            bbox_size.flatten(),
             bbox_aspect_ratios,
             [sa_to_bbox_volume_ratio],
-            eigenvalues,
-            eigenvalues_ratio,
+            eigenvalues.flatten(),
+            eigenvalues_ratio.flatten(),
             [first_to_second_axis_ratio],
             [num_vertices, num_faces],
             [mean_curvature, std_curvature],
@@ -232,7 +242,8 @@ def extract_geometric_features(meshes):
 
     return np.vstack(features), feature_data
 
-def extract_image_features(images):
+
+def extract_image_features(images, model, transform):
     """Extract features from images (ndarray) using a pre-trained ResNet model."""
     image_features = []
 
@@ -259,105 +270,16 @@ def extract_image_features(images):
 
     return np.array(image_features)
 
-def extract_combined_contour_features(contour_images_list):
+
+def extract_combined_contour_features(contour_images_list, model, transform):
     """Extract and combine features from multiple contour images."""
     combined_contour_features = []
 
     for contour_images in contour_images_list:
         # Extract features from each contour image using the pre-trained ResNet
-        contour_features = extract_image_features(contour_images)
+        contour_features = extract_image_features(contour_images, model, transform)
         # Combine the features from multiple contour images (e.g., by averaging or concatenation)
         combined_features = np.mean(contour_features, axis=0)  # Here, we're using averaging
         combined_contour_features.append(combined_features)
 
     return np.array(combined_contour_features)
-
-
-def main():
-    # Directory containing subfolders with datasets
-    datasets_folder = "/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets"  # Update this path
-
-    # Load the meshes and corresponding images from subfolders
-    meshes, normalized_meshes, depth_images, contour_images_list, skeleton_images, subfolder_names = load_meshes_and_images_from_folders(datasets_folder)
-
-    # Extract geometric features from meshes
-    geometric_features, feature_data = extract_geometric_features(normalized_meshes)
-
-    # Extract and combine features from contour images
-    contour_features = extract_combined_contour_features(contour_images_list)
-
-    # Extract features from depth images
-    depth_features = extract_image_features(depth_images)
-
-    # Extract features from skeleton images
-    skeleton_features = extract_image_features(skeleton_images)
-
-    # Combine all features
-    combined_features = np.hstack((geometric_features, contour_features))
-
-    # Standardize the combined features
-    scaler = StandardScaler()
-    combined_features = scaler.fit_transform(combined_features)
-
-    # Apply PCA to reduce the dimensionality of the combined features
-    pca = PCA(n_components=0.95)  # Keep 95% of the variance
-    reduced_features = pca.fit_transform(combined_features)
-    print(f"Reduced features shape: {reduced_features.shape}")
-
-    # Perform clustering on the reduced features
-    num_clusters = 5  # You can adjust the number of clusters as needed
-    kmeans = KMeans(n_clusters=num_clusters, n_init=50, random_state=42)
-    cluster_labels = kmeans.fit_predict(reduced_features)
-
-    # Calculate and print clustering evaluation metrics
-    silhouette_avg = silhouette_score(reduced_features, cluster_labels)
-    db_score = davies_bouldin_score(reduced_features, cluster_labels)
-    inertia = kmeans.inertia_
-
-    print(f"Silhouette Score: {silhouette_avg}")
-    print(f"Davies-Bouldin Index: {db_score}")
-    print(f"KMeans Inertia: {inertia}")
-
-    # --- t-SNE Visualization ---
-    tsne = TSNE(n_components=2, random_state=42)
-    tsne_results = tsne.fit_transform(reduced_features)
-
-    plt.figure(figsize=(8,6))
-    plt.scatter(tsne_results[:, 0], tsne_results[:, 1], c=cluster_labels, cmap='viridis')
-    plt.title('t-SNE Clustering Results')
-    plt.colorbar(label='Cluster Label')
-    plt.show()
-
-    # Visualize clustered meshes with their subfolder names
-    visualize_clustered_meshes(meshes, cluster_labels)
-
-    # Extract data for visualization
-    surface_areas = [data['surface_area'] for data in feature_data]
-    aspect_ratios = [data['aspect_ratios'] for data in feature_data]
-    sa_to_volume_ratios = [data['sa_to_bbox_volume_ratio'] for data in feature_data]
-    num_vertices = [data['num_vertices'] for data in feature_data]
-    num_faces = [data['num_faces'] for data in feature_data]
-
-    # Visualize surface area
-    # visualize_surface_area(meshes, surface_areas)
-
-    # Visualize aspect ratios
-    visualize_aspect_ratios(aspect_ratios, subfolder_names)
-
-    # Visualize the first to second principal axis ratio
-    visualize_first_to_second_axis_ratios(feature_data, subfolder_names)
-
-    # Visualize surface area to volume ratio
-    visualize_sa_to_volume_ratio(sa_to_volume_ratios, subfolder_names)
-
-    # Visualize vertices and faces
-    visualize_vertices_faces(num_vertices, num_faces, subfolder_names)
-
-    # For each mesh, visualize curvature and face areas
-    for data, name in zip(feature_data, subfolder_names):
-        visualize_curvature(data['mesh'], data['curvature'])
-        visualize_face_areas(data['mesh'])
-        visualize_edge_lengths(data['edge_lengths'], name)
-
-if __name__ == "__main__":
-    main()
