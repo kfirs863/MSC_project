@@ -1,0 +1,17 @@
+name: msc_streamlit
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+    - streamlit
+    - torch
+    - torchvision
+    - open3d
+    - scikit-image
+    - matplotlib
+    - ipywidgets
+    - ultralytics
+    - streamlit-drawable-canvas
