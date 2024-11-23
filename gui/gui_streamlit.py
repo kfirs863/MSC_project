@@ -1,7 +1,7 @@
 import streamlit as st
 import torch
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 from pathlib import Path
 import tempfile
 import gc
@@ -10,7 +10,6 @@ import open3d as o3d
 from ultralytics import SAM
 
 # Import your custom tools/modules here
-# These should be defined in your project
 from tools.utils import display_masked_areas
 from tools.orthograohic_image import capture_textured_image_and_depth_from_obj
 from tools.extract_and_save_masked_areas import extract_and_save_masked_areas
@@ -23,8 +22,6 @@ from streamlit_drawable_canvas import st_canvas
 # ----------------------------
 if 'processed' not in st.session_state:
     st.session_state.processed = False
-if 'bounding_boxes' not in st.session_state:
-    st.session_state.bounding_boxes = []
 if 'obj_path' not in st.session_state:
     st.session_state.obj_path = None
 if 'zoom_factor' not in st.session_state:
@@ -35,8 +32,8 @@ if 'depth_path' not in st.session_state:
     st.session_state.depth_path = None
 if 'camera_params_path' not in st.session_state:
     st.session_state.camera_params_path = None
-if 'canvas_key' not in st.session_state:
-    st.session_state.canvas_key = 0  # Used to reset the canvas
+if 'sam_model_loaded' not in st.session_state:
+    st.session_state.sam_model_loaded = False
 
 # ----------------------------
 # Streamlit Page Configuration
@@ -52,15 +49,10 @@ Upload an `.obj` file, draw multiple bounding boxes on the generated image, and 
 """)
 
 # ----------------------------
-# Handle Deprecation Warning
-# ----------------------------
-# Ensure that `use_container_width` is used instead of `use_column_width`
-# All instances of `use_column_width=True` should be replaced with `use_container_width=True`
-
-# ----------------------------
 # Function Definitions
 # ----------------------------
 
+@st.cache_resource
 def load_sam_model(model_path="sam2_l.pt", device="cpu"):
     """
     Load the SAM model.
@@ -106,32 +98,6 @@ def process_obj(uploaded_file, zoom, number_of_iterations, use_sharpen, strength
     except Exception as e:
         st.error(f"Failed to process OBJ file: {e}")
         return None, None, None, None
-
-def draw_bounding_boxes(image, bounding_boxes, zoom_factor):
-    """
-    Draw all bounding boxes on the image.
-    """
-    draw = ImageDraw.Draw(image)
-    for bbox in bounding_boxes:
-        # Scale bounding box coordinates based on zoom_factor
-        scaled_bbox = [coord * zoom_factor for coord in bbox]
-        draw.rectangle(scaled_bbox, outline="red", width=2)
-    return image
-
-def remove_bbox(idx):
-    """
-    Remove a bounding box from the session state.
-    """
-    if 0 <= idx < len(st.session_state.bounding_boxes):
-        removed_box = st.session_state.bounding_boxes.pop(idx)
-        st.success(f"Removed Box {idx + 1}: {removed_box}")
-        st.session_state.canvas_key += 1  # Reset the canvas to update the background
-
-# ----------------------------
-# Load SAM Model
-# ----------------------------
-with st.spinner("Loading SAM model..."):
-    predictor = load_sam_model()
 
 # ----------------------------
 # Sidebar Configurations
@@ -181,6 +147,15 @@ if obj_file is not None and not st.session_state.processed:
             st.session_state.processed = True
             gc.collect()
 
+# Load the SAM model only once
+if not st.session_state.sam_model_loaded:
+    with st.spinner("Loading SAM model..."):
+        predictor = load_sam_model()
+        st.session_state.predictor = predictor
+        st.session_state.sam_model_loaded = True
+else:
+    predictor = st.session_state.predictor
+
 # If the OBJ file has been processed, display the image and bounding box tools
 if st.session_state.processed and st.session_state.image_path:
     try:
@@ -191,81 +166,60 @@ if st.session_state.processed and st.session_state.image_path:
         new_height = int(height * st.session_state.zoom_factor)
         scaled_image = ortho_image.resize((new_width, new_height), Image.LANCZOS)
 
-        # Draw existing bounding boxes on the image
-        image_with_boxes = ortho_image.copy()
-        if st.session_state.bounding_boxes:
-            image_with_boxes = draw_bounding_boxes(image_with_boxes, st.session_state.bounding_boxes, st.session_state.zoom_factor)
-        resized_image_with_boxes = image_with_boxes.resize((new_width, new_height), Image.LANCZOS)
+        st.markdown("### Draw or Edit Bounding Boxes")
+        drawing_mode_option = st.selectbox(
+            "Drawing tool:",
+            ("Add boxes", "Edit boxes"),
+        )
 
-        st.markdown("### Draw Bounding Boxes")
+        if drawing_mode_option == "Add boxes":
+            drawing_mode = "rect"
+        elif drawing_mode_option == "Edit boxes":
+            drawing_mode = "transform"
+        else:
+            drawing_mode = "rect"
+
+        # Use st_canvas to draw bounding boxes
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",  # Semi-transparent fill
             stroke_width=2,
             stroke_color="#FF0000",
-            background_image=resized_image_with_boxes,
+            background_image=scaled_image,
             update_streamlit=True,
             height=new_height,
             width=new_width,
-            drawing_mode="rect",
-            key=f"canvas_{st.session_state.canvas_key}",  # Unique key to reset the canvas
+            drawing_mode=drawing_mode,
+            key='canvas',
         )
 
-        # Handle bounding box drawing
+        # Extract bounding boxes from canvas objects
+        bounding_boxes = []
         if canvas_result.json_data is not None:
-            objects = canvas_result.json_data.get("objects", [])
-            if objects:
-                # Iterate through all drawn objects
-                for obj in objects:
-                    if obj["type"] == "rect":
-                        # Extract bounding box coordinates
-                        x1 = obj["left"] / st.session_state.zoom_factor
-                        y1 = obj["top"] / st.session_state.zoom_factor
-                        x2 = (obj["left"] + obj["width"]) / st.session_state.zoom_factor
-                        y2 = (obj["top"] + obj["height"]) / st.session_state.zoom_factor
-                        bbox = [x1, y1, x2, y2]
+            for obj in canvas_result.json_data['objects']:
+                if obj['type'] == 'rect':
+                    x1 = obj['left'] / st.session_state.zoom_factor
+                    y1 = obj['top'] / st.session_state.zoom_factor
+                    x2 = (obj['left'] + obj['width']) / st.session_state.zoom_factor
+                    y2 = (obj['top'] + obj['height']) / st.session_state.zoom_factor
+                    bounding_boxes.append([x1, y1, x2, y2])
 
-                        # Add the new bounding box to the session state list
-                        if len(st.session_state.bounding_boxes) < 10:
-                            # Check if the bbox is already in the list to prevent duplicates
-                            if bbox not in st.session_state.bounding_boxes:
-                                st.session_state.bounding_boxes.append(bbox)
-                                st.success(f"Added Box {len(st.session_state.bounding_boxes)}: {bbox}")
-                                st.session_state.canvas_key += 1  # Reset the canvas after adding a box
-                            else:
-                                st.warning("This bounding box already exists.")
-                        else:
-                            st.warning("Maximum 10 bounding boxes allowed.")
-
-        # Display existing bounding boxes and provide removal options
-        st.write("### Bounding Boxes:")
-        if st.session_state.bounding_boxes:
-            # Create a selectbox to choose which bounding box to remove
-            box_labels = [
-                f"Box {idx + 1}: [{bbox[0]:.2f}, {bbox[1]:.2f}, {bbox[2]:.2f}, {bbox[3]:.2f}]"
-                for idx, bbox in enumerate(st.session_state.bounding_boxes)
-            ]
-            selected_box_label = st.selectbox("Select a bounding box to remove:", box_labels)
-
-            # Find the index of the selected box
-            selected_idx = box_labels.index(selected_box_label)
-
-            # Button to remove the selected bounding box
-            if st.button("Remove Selected Box"):
-                remove_bbox(selected_idx)
-
+            # Limit the number of bounding boxes
+            if len(bounding_boxes) > 10:
+                st.warning("Maximum 10 bounding boxes allowed.")
+                bounding_boxes = bounding_boxes[:10]
         else:
             st.info("No bounding boxes added yet.")
 
         # Button to process the bounding boxes with SAM
         if st.button("Process with SAM"):
-            if st.session_state.bounding_boxes:
+            if bounding_boxes:
                 if predictor is None:
                     st.error("SAM model not loaded.")
                 else:
                     with st.spinner("Processing with SAM..."):
                         try:
                             # Convert bounding boxes to NumPy array
-                            bboxes = np.array(st.session_state.bounding_boxes)
+                            bboxes = np.array(bounding_boxes)
                             # Process with SAM
                             results = predictor(
                                 source=st.session_state.image_path,
