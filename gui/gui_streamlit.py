@@ -8,7 +8,9 @@ import gc
 import plotly.graph_objects as go
 import open3d as o3d
 from ultralytics import SAM
-
+import os
+import json
+from tqdm import tqdm  # Ensure tqdm is installed: pip install tqdm
 
 # from tools.utils import display_masked_areas
 from tools.orthograohic_image import capture_textured_image_and_depth_from_obj
@@ -176,7 +178,7 @@ def resize_image(image_path, max_size=(1024, 1024)):
     Resize the image to fit within max_size while maintaining aspect ratio.
     """
     image = Image.open(image_path)
-    image.thumbnail(max_size, Image.LANCZOS)
+    image.thumbnail(max_size, Image.Resampling.LANCZOS)
     return image
 
 def process_obj(uploaded_file, params):
@@ -249,7 +251,7 @@ if st.session_state.obj_file is not None:
             width, height = ortho_image.size
             new_width = int(width * st.session_state.params['zoom_factor'])
             new_height = int(height * st.session_state.params['zoom_factor'])
-            scaled_image = ortho_image.resize((new_width, new_height), Image.LANCZOS)
+            scaled_image = ortho_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
             st.markdown("### Draw or Edit Bounding Boxes")
             drawing_mode_option = st.selectbox(
@@ -317,15 +319,41 @@ if st.session_state.obj_file is not None:
                                 all_masks = []
                                 st.markdown("### Generated Masks")
 
+                                # Implementing Arranging Masks in Columns
+
+                                # Collect all mask data first
                                 for result in results:
                                     if result.masks is not None:
                                         for mask in result.masks.data:
                                             mask_np = mask.cpu().numpy() if torch.is_tensor(mask) else mask
                                             all_masks.append(mask_np)
-                                            mask_display = (mask_np * 255).astype(np.uint8)
-                                            st.image(mask_display, caption=f'Mask {len(all_masks)}', use_container_width=True)
 
-                                if not all_masks:
+                                if all_masks:
+                                    # Define the number of columns per row
+                                    cols_per_row = 3
+                                    num_masks = len(all_masks)
+                                    num_rows = (num_masks + cols_per_row - 1) // cols_per_row  # Ceiling division
+
+                                    mask_idx = 0
+                                    for row in range(num_rows):
+                                        cols = st.columns(cols_per_row)
+                                        for col in cols:
+                                            if mask_idx < num_masks:
+                                                mask_np = all_masks[mask_idx]
+                                                mask_display = (mask_np * 255).astype(np.uint8)
+
+                                                # Resize the mask image to match the scaled image size
+                                                mask_image = Image.fromarray(mask_display)
+                                                resized_mask = mask_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                                                with col:
+                                                    st.image(
+                                                        resized_mask,
+                                                        caption=f'Mask {mask_idx + 1}',
+                                                        width=new_width  # Set width to match the canvas image
+                                                    )
+                                                mask_idx += 1
+                                else:
                                     st.error("No masks generated.")
                                     st.stop()
 
