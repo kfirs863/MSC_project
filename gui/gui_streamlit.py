@@ -10,7 +10,7 @@ import open3d as o3d
 from ultralytics import SAM
 import os
 import json
-from tqdm import tqdm  # Ensure tqdm is installed: pip install tqdm
+from tqdm import tqdm
 from streamlit_drawable_canvas import st_canvas
 
 # Tools: Adjust these imports if needed
@@ -46,7 +46,7 @@ if 'masks_folders_list' not in st.session_state:
 if 'params' not in st.session_state:
     st.session_state.params = {}
 if 'all_masks' not in st.session_state:
-    st.session_state.all_masks = []   # Store boolean masks here
+    st.session_state.all_masks = []   # boolean masks
 if 'mask_colors' not in st.session_state:
     st.session_state.mask_colors = []
 
@@ -60,17 +60,15 @@ st.set_page_config(page_title="3D Mesh Segmentation Tool", layout="wide")
 # ----------------------------
 st.title("3D Mesh Segmentation Tool")
 st.markdown("""
-**Fix**: We composite the strokes layer over the original mask image
-so that the final mask includes user edits, rather than an empty image.
+**Fix**: The "Generated Masks" section remains visible once the editing widget is displayed.
 """)
 
 # ----------------------------
-# Sidebar Configurations
+# Sidebar
 # ----------------------------
 st.sidebar.header("Upload OBJ File")
 uploaded_obj_file = st.sidebar.file_uploader("Upload .obj File", type=["obj"])
 
-# If new file is uploaded, reset
 if uploaded_obj_file is not None:
     if 'obj_file_name' not in st.session_state or st.session_state.obj_file_name != uploaded_obj_file.name:
         st.session_state.obj_file = uploaded_obj_file
@@ -95,9 +93,7 @@ show_3d = st.sidebar.checkbox(
 
 st.sidebar.header("Capture Configuration")
 number_of_iterations = st.sidebar.slider(
-    "Number of Iterations",
-    0,
-    10,
+    "Number of Iterations", 0, 10,
     st.session_state.params.get('number_of_iterations', 1)
 )
 use_sharpen = st.sidebar.checkbox(
@@ -188,7 +184,7 @@ def process_obj(uploaded_file, params):
         return None, None, None, None
 
 # ----------------------------
-# Main Application Logic
+# Main
 # ----------------------------
 if not st.session_state.sam_model_loaded:
     with st.spinner("Loading SAM model..."):
@@ -243,7 +239,6 @@ if st.session_state.obj_file is not None:
                 key='canvas_bboxes'
             )
 
-            # Extract bounding boxes
             bounding_boxes = []
             if canvas_result.json_data is not None:
                 for obj in canvas_result.json_data['objects']:
@@ -258,9 +253,8 @@ if st.session_state.obj_file is not None:
                     st.warning("Max 10 bounding boxes allowed.")
                     bounding_boxes = bounding_boxes[:10]
             else:
-                st.info("No bounding boxes added yet.")
+                st.info("No bounding boxes drawn yet.")
 
-            # Process bounding boxes with SAM
             if st.button("Process with SAM"):
                 if not bounding_boxes:
                     st.warning("Please draw at least one bounding box.")
@@ -281,54 +275,54 @@ if st.session_state.obj_file is not None:
                                 st.session_state.all_masks = []
                                 st.session_state.mask_colors = []
 
-                                all_masks = []
+                                temp_masks = []
                                 for result in results:
                                     if result.masks is not None:
                                         for mask in result.masks.data:
-                                            # Convert to boolean
                                             mask_np = mask.cpu().numpy().astype(bool)
                                             mask_np = np.squeeze(mask_np)
                                             if mask_np.ndim != 2:
                                                 st.warning(f"Skipping invalid mask shape {mask_np.shape}")
                                                 continue
-                                            all_masks.append(mask_np)
+                                            temp_masks.append(mask_np)
 
-                                if not all_masks:
+                                if not temp_masks:
                                     st.error("No valid masks generated.")
                                     st.stop()
 
-                                st.session_state.all_masks = all_masks
-                                st.session_state.mask_colors = np.random.randint(100, 255, (len(all_masks), 3))
+                                st.session_state.all_masks = temp_masks
+                                st.session_state.mask_colors = np.random.randint(100, 255, (len(temp_masks), 3))
                                 st.session_state.sam_processed = True
-
-                                st.markdown("### Generated Masks")
-                                cols_per_row = 3
-                                num_masks = len(all_masks)
-                                num_rows = (num_masks + cols_per_row - 1) // cols_per_row
-
-                                mask_idx = 0
-                                for row in range(num_rows):
-                                    cols = st.columns(cols_per_row)
-                                    for col in cols:
-                                        if mask_idx < num_masks:
-                                            boolean_mask = all_masks[mask_idx]
-                                            # Convert boolean to black/white
-                                            mask_display = np.where(boolean_mask, 255, 0).astype(np.uint8)
-                                            mask_pil = Image.fromarray(mask_display)
-                                            resized_mask = mask_pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                                            with col:
-                                                st.image(resized_mask, caption=f"Mask {mask_idx+1}", width=new_width)
-                                            mask_idx += 1
-
                                 st.success("Masks generated successfully!")
                                 gc.collect()
 
                             except Exception as e:
-                                st.error(f"SAM processing error: {e}")
+                                st.error(f"SAM processing error: {str(e)}")
 
-            # Single editing widget + dropbox to switch masks
+            # ALWAYS display "Generated Masks" if they exist
             if st.session_state.sam_processed and st.session_state.all_masks:
-                st.markdown("### Optional: Edit Masks (Composite Fix)")
+                st.markdown("### Generated Masks (Still Visible)")
+                all_masks = st.session_state.all_masks
+                cols_per_row = 3
+                num_masks = len(all_masks)
+                num_rows = (num_masks + cols_per_row - 1) // cols_per_row
+
+                mask_idx = 0
+                for row in range(num_rows):
+                    cols = st.columns(cols_per_row)
+                    for col in cols:
+                        if mask_idx < num_masks:
+                            boolean_mask = all_masks[mask_idx]
+                            mask_display = np.where(boolean_mask, 255, 0).astype(np.uint8)
+                            mask_pil = Image.fromarray(mask_display)
+                            resized_mask = mask_pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                            with col:
+                                st.image(resized_mask, caption=f"Mask {mask_idx+1}", width=new_width)
+                            mask_idx += 1
+
+            # Single editing widget
+            if st.session_state.sam_processed and st.session_state.all_masks:
+                st.markdown("### Edit Masks with Composite Fix")
                 mask_options = [f"Mask {i+1}" for i in range(len(st.session_state.all_masks))]
                 mask_to_edit = st.selectbox("Select a mask to edit:", options=mask_options)
                 selected_mask_idx = int(mask_to_edit.split()[-1]) - 1
@@ -338,20 +332,19 @@ if st.session_state.obj_file is not None:
                     st.warning(f"Invalid shape {current_mask_bool.shape} for mask {selected_mask_idx+1}")
                 else:
                     # Convert boolean => black/white RGBA
-                    # White = True (255), Black = False (0)
                     bw_display = np.where(current_mask_bool, 255, 0).astype(np.uint8)
                     mask_pil = Image.fromarray(bw_display, mode="L").convert("RGBA")
 
-                    st.markdown("**Brush**: White (Add) or Black (Erase). The final mask is a composite of strokes + original mask.")
-                    brush_option = st.radio("Brush color:", ["White (Add)", "Black (Erase)"])
+                    st.markdown("**Brush**: White (Add), Black (Erase)")
+                    brush_option = st.radio("Brush color:", ["White (Add)", "Black (Erase)"], key='brush_color')
                     stroke_color = "rgba(255,255,255,1.0)" if brush_option == "White (Add)" else "rgba(0,0,0,1.0)"
-                    stroke_width = st.slider("Brush size", 1, 50, 10)
+                    stroke_width = st.slider("Brush size", 1, 50, 10, key='brush_width')
 
                     edit_canvas_result = st_canvas(
                         fill_color="#00000000",
                         stroke_width=stroke_width,
                         stroke_color=stroke_color,
-                        background_image=mask_pil,  # The mask is behind the canvas
+                        background_image=mask_pil,
                         update_streamlit=True,
                         height=mask_pil.height,
                         width=mask_pil.width,
@@ -361,36 +354,27 @@ if st.session_state.obj_file is not None:
 
                     if st.button("Save Mask Edits"):
                         if edit_canvas_result.image_data is not None:
-                            # The returned image_data is ONLY the strokes on transparent
-                            strokes_rgba = edit_canvas_result.image_data  # shape (H, W, 4)
-
-                            # Composite strokes over original mask image
-                            original_rgba = mask_pil.copy()  # The original mask as RGBA
+                            strokes_rgba = edit_canvas_result.image_data
+                            original_rgba = mask_pil.copy()
                             strokes_pil = Image.fromarray(strokes_rgba.astype(np.uint8), mode="RGBA")
 
-                            # Composite user strokes (foreground) over mask background
-                            # White strokes will set R/G/B=255, alpha=255
-                            # Black strokes => R/G/B=0, alpha=255
+                            # Composite strokes over the mask background
+                            if strokes_pil.size != original_rgba.size:
+                                strokes_pil = strokes_pil.resize(original_rgba.size, Image.Resampling.LANCZOS)
+
                             combined = Image.alpha_composite(original_rgba, strokes_pil)
 
-                            # Convert combined back to boolean mask by thresholding
-                            # E.g., treat 'white (255,255,255)' as True, black(0,0,0) as False
                             combined_np = np.array(combined)
-                            # A simple approach is to check alpha or grayscale
-                            # If alpha > 128 => keep old or painted white
-                            # But let's do grayscale of the RGB channels
                             rgb_gray = np.mean(combined_np[:, :, :3], axis=2)
                             refined_mask = (rgb_gray > 128)
-
                             st.session_state.all_masks[selected_mask_idx] = refined_mask
                             st.success(f"Edits saved for {mask_to_edit}!")
 
-            # Projection to 3D
+            # Projection
             if st.session_state.sam_processed and st.session_state.all_masks:
                 if st.button("Project Masks to 3D Mesh"):
                     st.info("Projecting masks onto the 3D mesh...")
                     try:
-                        # Convert final masks to boolean
                         all_masks_bool = np.array(st.session_state.all_masks).astype(bool)
                         mask_colors = np.array(st.session_state.mask_colors)
 
@@ -417,7 +401,6 @@ if st.session_state.obj_file is not None:
                         st.session_state.masks_folders_list = masks_folders_list
                         st.success("Projection & extraction completed successfully!")
 
-                        # 3D Visualization
                         if show_3d:
                             st.markdown("### 3D Visualization")
                             st.info("Rendering 3D visualizations...")
@@ -485,7 +468,7 @@ if st.session_state.obj_file is not None:
 
                             st.success("3D visualization rendered successfully!")
 
-                        # Download buttons
+                        # Download Buttons
                         st.markdown("### Download Meshes")
                         with open(st.session_state.colored_mesh_path, "rb") as f:
                             st.download_button(
