@@ -9,8 +9,8 @@ import plotly.graph_objects as go
 import open3d as o3d
 from ultralytics import SAM
 
-# Import your custom tools/modules here
-from tools.utils import display_masked_areas
+
+# from tools.utils import display_masked_areas
 from tools.orthograohic_image import capture_textured_image_and_depth_from_obj
 from tools.extract_and_save_masked_areas import extract_and_save_masked_areas
 from tools.project_masks_to_3d import project_masks_to_mesh
@@ -88,7 +88,7 @@ new_zoom_factor = st.sidebar.slider(
 # Show 3D Visualization
 show_3d = st.sidebar.checkbox(
     "Show 3D Visualization",
-    value=st.session_state.params.get('show_3d', False)
+    value=st.session_state.params.get('show_3d', True)
 )
 
 # Capture Configuration Settings
@@ -101,7 +101,7 @@ number_of_iterations = st.sidebar.slider(
 )
 use_sharpen = st.sidebar.checkbox(
     "Use Sharpen Filter",
-    value=st.session_state.params.get('use_sharpen', True)
+    value=st.session_state.params.get('use_sharpen', False)
 )
 strength = st.sidebar.slider(
     "Sharpen Strength",

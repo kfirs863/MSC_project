@@ -92,10 +92,7 @@ def project_masks_to_mesh(obj_path, masks_path, colors_path, params_path, depth_
 
 
     # Initialize the mesh colors with the original mesh vertex colors
-    if mesh.has_vertex_colors():
-        mesh_colors = np.asarray(mesh.vertex_colors)
-    else:
-        mesh_colors = np.ones_like(mesh.vertices)  # Default to white if no colors are available
+    mesh_colors = np.ones_like(mesh.vertices)  # Default to white if no colors are available
 
     # Create a KDTree for fast nearest-neighbor lookup
     pcd_tree = o3d.geometry.KDTreeFlann(combined_pcd)

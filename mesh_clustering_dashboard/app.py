@@ -1,3 +1,5 @@
+# app.py
+
 import json
 import dash
 from dash import dcc, html, Input, Output, State, ALL
@@ -28,7 +30,8 @@ from visualizations import (
     visualize_face_areas_plotly,
     visualize_edge_lengths_plotly,
     visualize_tsne_plotly,
-    visualize_mesh3d
+    visualize_mesh3d,
+    visualize_feature_importance_plotly  # Import the new function
 )
 
 # Load the ResNet50 model
@@ -48,7 +51,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             html.H4("Dataset Folder Path"),
-            dbc.Input(type="text", id='dataset_path', value='./datasets', placeholder="Enter the dataset folder path"),
+            dbc.Input(type="text", id='dataset_path', value='/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets', placeholder="Enter the dataset folder path"),
             html.Br(),
             html.H4("Geometric Feature Selection"),
             dbc.Accordion([
@@ -59,12 +62,10 @@ app.layout = dbc.Container([
                             id='geometric_features',
                             options=[
                                 {'label': 'Surface Area', 'value': 'surface_area'},
-                                {'label': 'Bounding Box Size', 'value': 'bbox_size'},
-                                {'label': 'Bounding Box Aspect Ratios', 'value': 'bbox_aspect_ratios'},
+                                # Removed bbox_size and bbox_aspect_ratios as they are influenced by coordinates
                                 {'label': 'SA to Bounding Box Volume Ratio', 'value': 'sa_to_bbox_volume_ratio'},
-                                {'label': 'PCA Eigenvalues', 'value': 'eigenvalues'},
-                                {'label': 'PCA Eigenvalues Ratio', 'value': 'eigenvalues_ratio'},
-                                {'label': 'First to Second Axis Ratio', 'value': 'first_to_second_axis_ratio'},
+                                # Removed eigenvalues and eigenvalues_ratio
+                                # Removed first_to_second_axis_ratio
                                 {'label': 'Number of Vertices', 'value': 'num_vertices'},
                                 {'label': 'Number of Faces', 'value': 'num_faces'},
                                 {'label': 'Mean Curvature', 'value': 'mean_curvature'},
@@ -76,12 +77,7 @@ app.layout = dbc.Container([
                             ],
                             value=[
                                 'surface_area',
-                                'bbox_size',
-                                'bbox_aspect_ratios',
                                 'sa_to_bbox_volume_ratio',
-                                'eigenvalues',
-                                'eigenvalues_ratio',
-                                'first_to_second_axis_ratio',
                                 'num_vertices',
                                 'num_faces',
                                 'mean_curvature',
@@ -153,6 +149,9 @@ app.layout = dbc.Container([
                         dcc.Tab(label='2D Visualizations', children=[
                             html.Div(id='tabs-content')
                         ]),
+                        dcc.Tab(label='Feature Importance', children=[
+                            dcc.Graph(id='feature_importance_graph')
+                        ]),
                         dcc.Tab(label='3D Visualization', children=[
                             dcc.Graph(
                                 id='3d_mesh',
@@ -175,12 +174,7 @@ app.layout = dbc.Container([
 def display_feature_info(selected_features):
     formatted_features = {
         'surface_area': 'Surface Area',
-        'bbox_size': 'Bounding Box Size',
-        'bbox_aspect_ratios': 'Bounding Box Aspect Ratios',
         'sa_to_bbox_volume_ratio': 'SA to Bounding Box Volume Ratio',
-        'eigenvalues': 'PCA Eigenvalues',
-        'eigenvalues_ratio': 'PCA Eigenvalues Ratio',
-        'first_to_second_axis_ratio': 'First to Second Axis Ratio',
         'num_vertices': 'Number of Vertices',
         'num_faces': 'Number of Faces',
         'mean_curvature': 'Mean Curvature',
@@ -266,10 +260,13 @@ def display_clustering_parameters(algorithm):
 
 # Callback to run clustering when button is clicked
 @app.callback(
-    [Output('metrics_output', 'children'),
-     Output('tabs-content', 'children'),
-     Output('3d_mesh', 'figure'),
-     Output('runtime_output', 'children')],  # Output for runtime
+    [
+        Output('metrics_output', 'children'),
+        Output('tabs-content', 'children'),
+        Output('3d_mesh', 'figure'),
+        Output('feature_importance_graph', 'figure'),  # New Output for feature importance
+        Output('runtime_output', 'children')  # Output for runtime
+    ],
     Input('run_button', 'n_clicks'),
     State('geometric_features', 'value'),
     State('image_features', 'value'),
@@ -281,7 +278,7 @@ def display_clustering_parameters(algorithm):
 def run_clustering(n_clicks, selected_geometric_features, selected_image_features, algorithm, clustering_param_values,
                    dataset_path):
     if n_clicks is None or not dataset_path:
-        return "", dash.no_update, dash.no_update, dash.no_update
+        return "", dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Start timing
     start_time = time.time()
@@ -291,38 +288,59 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
 
     # Extract relevant parameters based on the selected algorithm
     if algorithm == 'kmeans':
-        kmeans_n_clusters = clustering_param_values[0]
-        kmeans_max_iter = clustering_param_values[1]
-        kmeans_random_state = clustering_param_values[2]
+        try:
+            kmeans_n_clusters = int(clustering_param_values[0])
+            kmeans_max_iter = int(clustering_param_values[1])
+            kmeans_random_state = int(clustering_param_values[2]) if clustering_param_values[2] else None
+        except (IndexError, ValueError):
+            kmeans_n_clusters = 5
+            kmeans_max_iter = 20
+            kmeans_random_state = None
         params = {
             'n_clusters': kmeans_n_clusters,
             'max_iter': kmeans_max_iter,
             'random_state': kmeans_random_state
         }
     elif algorithm == 'dbscan':
-        dbscan_eps = clustering_param_values[0]
-        dbscan_min_samples = clustering_param_values[1]
+        try:
+            dbscan_eps = float(clustering_param_values[0])
+            dbscan_min_samples = int(clustering_param_values[1])
+        except (IndexError, ValueError):
+            dbscan_eps = 0.5
+            dbscan_min_samples = 5
         params = {
             'eps': dbscan_eps,
             'min_samples': dbscan_min_samples
         }
     elif algorithm == 'agglomerative':
-        agglo_n_clusters = clustering_param_values[0]
-        agglo_linkage = clustering_param_values[1]
+        try:
+            agglo_n_clusters = int(clustering_param_values[0])
+            agglo_linkage = clustering_param_values[1]
+        except (IndexError, ValueError):
+            agglo_n_clusters = 5
+            agglo_linkage = 'ward'
         params = {
             'n_clusters': agglo_n_clusters,
             'linkage': agglo_linkage
         }
     elif algorithm == 'spectral':
-        spectral_n_clusters = clustering_param_values[0]
-        spectral_n_components = clustering_param_values[1]
+        try:
+            spectral_n_clusters = int(clustering_param_values[0])
+            spectral_n_components = int(clustering_param_values[1])
+        except (IndexError, ValueError):
+            spectral_n_clusters = 5
+            spectral_n_components = 100
         params = {
             'n_clusters': spectral_n_clusters,
             'n_components': spectral_n_components
         }
     elif algorithm == 'gmm':
-        gmm_n_components = clustering_param_values[0]
-        gmm_covariance_type = clustering_param_values[1]
+        try:
+            gmm_n_components = int(clustering_param_values[0])
+            gmm_covariance_type = clustering_param_values[1]
+        except (IndexError, ValueError):
+            gmm_n_components = 5
+            gmm_covariance_type = 'full'
         params = {
             'n_components': gmm_n_components,
             'covariance_type': gmm_covariance_type
@@ -333,7 +351,7 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
         dataset_path)
 
     # Extract geometric features
-    geometric_features, feature_data = extract_geometric_features(normalized_meshes)
+    geometric_features, feature_data, feature_names = extract_geometric_features(normalized_meshes)
 
     # Initialize features list for combining
     features_list = []
@@ -351,56 +369,9 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
         skeleton_features = extract_image_features(skeleton_images, model, transform)
         features_list.append(skeleton_features)
 
-    # Combine features based on selected geometric features
-    feature_indices = []
-    feature_labels = []
-
-    # Select the geometric features based on user input
-    if 'surface_area' in selected_geometric_features:
-        feature_indices.append(0)
-        feature_labels.append('surface_area')
-    if 'bbox_size' in selected_geometric_features:
-        feature_indices.extend([1, 2, 3])
-        feature_labels.extend(['bbox_size_x', 'bbox_size_y', 'bbox_size_z'])
-    if 'bbox_aspect_ratios' in selected_geometric_features:
-        feature_indices.extend([4, 5, 6])
-        feature_labels.extend(['aspect_ratio_width_height', 'aspect_ratio_height_depth', 'aspect_ratio_width_depth'])
-    if 'sa_to_bbox_volume_ratio' in selected_geometric_features:
-        feature_indices.append(7)
-        feature_labels.append('sa_to_bbox_volume_ratio')
-    if 'eigenvalues' in selected_geometric_features:
-        feature_indices.extend([8, 9, 10])
-        feature_labels.extend(['pca_eigenvalue_1', 'pca_eigenvalue_2', 'pca_eigenvalue_3'])
-    if 'eigenvalues_ratio' in selected_geometric_features:
-        feature_indices.extend([11, 12, 13])
-        feature_labels.extend(['pca_eigenvalue_ratio_1', 'pca_eigenvalue_ratio_2', 'pca_eigenvalue_ratio_3'])
-    if 'first_to_second_axis_ratio' in selected_geometric_features:
-        feature_indices.append(14)
-        feature_labels.append('first_to_second_axis_ratio')
-    if 'num_vertices' in selected_geometric_features:
-        feature_indices.append(15)
-        feature_labels.append('num_vertices')
-    if 'num_faces' in selected_geometric_features:
-        feature_indices.append(16)
-        feature_labels.append('num_faces')
-    if 'mean_curvature' in selected_geometric_features:
-        feature_indices.append(17)
-        feature_labels.append('mean_curvature')
-    if 'std_curvature' in selected_geometric_features:
-        feature_indices.append(18)
-        feature_labels.append('std_curvature')
-    if 'mean_edge_length' in selected_geometric_features:
-        feature_indices.append(19)
-        feature_labels.append('mean_edge_length')
-    if 'std_edge_length' in selected_geometric_features:
-        feature_indices.append(20)
-        feature_labels.append('std_edge_length')
-    if 'mean_face_area' in selected_geometric_features:
-        feature_indices.append(21)
-        feature_labels.append('mean_face_area')
-    if 'std_face_area' in selected_geometric_features:
-        feature_indices.append(22)
-        feature_labels.append('std_face_area')
+    # Map feature names to their indices
+    feature_indices = [feature_names.index(feature) for feature in selected_geometric_features if feature in feature_names]
+    selected_feature_names = [feature_names[index] for index in feature_indices]
 
     # Select the geometric features
     selected_geometric_features_array = geometric_features[:, feature_indices] if feature_indices else np.empty(
@@ -459,34 +430,22 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
         fig_surface_area = visualize_surface_area_plotly(subfolder_names, surface_areas)
         figures.append(fig_surface_area)
 
-    # 3. Aspect Ratios
-    if 'bbox_aspect_ratios' in selected_geometric_features:
-        aspect_ratios = [data['aspect_ratios'] for data in feature_data]
-        fig_aspect_ratios = visualize_aspect_ratios_plotly(aspect_ratios, subfolder_names)
-        figures.append(fig_aspect_ratios)
-
-    # 4. First to Second Axis Ratio
-    if 'first_to_second_axis_ratio' in selected_geometric_features:
-        first_to_second_axis_ratios = [data['first_to_second_axis_ratio'] for data in feature_data]
-        fig_axis_ratios = visualize_first_to_second_axis_ratios_plotly(first_to_second_axis_ratios, subfolder_names)
-        figures.append(fig_axis_ratios)
-
-    # 5. SA to Volume Ratio
+    # 3. SA to Volume Ratio
     if 'sa_to_bbox_volume_ratio' in selected_geometric_features:
         sa_to_volume_ratios = [data['sa_to_bbox_volume_ratio'] for data in feature_data]
         fig_sa_to_volume = visualize_sa_to_volume_ratio_plotly(sa_to_volume_ratios, subfolder_names)
         figures.append(fig_sa_to_volume)
 
-    # 6. Vertices and Faces
+    # 4. Number of Vertices and Faces
     if 'num_vertices' in selected_geometric_features or 'num_faces' in selected_geometric_features:
         num_vertices = [data['num_vertices'] for data in feature_data] if 'num_vertices' in selected_geometric_features else [0] * len(subfolder_names)
         num_faces = [data['num_faces'] for data in feature_data] if 'num_faces' in selected_geometric_features else [0] * len(subfolder_names)
         fig_vertices_faces = visualize_vertices_faces_plotly(num_vertices, num_faces, subfolder_names)
         figures.append(fig_vertices_faces)
 
-    # 7. Curvature
+    # 5. Curvature
     if 'mean_curvature' in selected_geometric_features or 'std_curvature' in selected_geometric_features:
-        curvatures = [data['curvature'] for data in feature_data]
+        curvatures = [data['curvature'] for data in feature_data]  # Corrected line
 
         if 'mean_curvature' in selected_geometric_features:
             mean_curvatures = [np.mean(curv) for curv in curvatures]
@@ -498,9 +457,9 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
             fig_std_curvature = visualize_curvature_plotly(std_curvatures, 'Std Curvature')
             figures.append(fig_std_curvature)
 
-    # 8. Edge Lengths
+    # 6. Edge Lengths
     if 'mean_edge_length' in selected_geometric_features or 'std_edge_length' in selected_geometric_features:
-        edge_lengths = [data['edge_lengths'] for data in feature_data]
+        edge_lengths = [data['edge_lengths'] for data in feature_data]  # Corrected line
         if 'mean_edge_length' in selected_geometric_features:
             mean_edge_lengths = [np.mean(edges) for edges in edge_lengths]
             fig_mean_edge_length = visualize_edge_lengths_plotly(mean_edge_lengths, 'Mean Edge Length')
@@ -510,9 +469,9 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
             fig_std_edge_length = visualize_edge_lengths_plotly(std_edge_lengths, 'Std Edge Length')
             figures.append(fig_std_edge_length)
 
-    # 9. Face Areas
+    # 7. Face Areas
     if 'mean_face_area' in selected_geometric_features or 'std_face_area' in selected_geometric_features:
-        face_areas = [data['face_areas'] for data in feature_data]
+        face_areas = [data['face_areas'] for data in feature_data]  # Corrected line
         if 'mean_face_area' in selected_geometric_features:
             mean_face_areas = [np.mean(areas) for areas in face_areas]
             fig_mean_face_area = visualize_face_areas_plotly(mean_face_areas, 'Mean Face Area')
@@ -521,6 +480,9 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
             std_face_areas = [np.std(areas) for areas in face_areas]
             fig_std_face_area = visualize_face_areas_plotly(std_face_areas, 'Std Face Area')
             figures.append(fig_std_face_area)
+
+    # --- Feature Importance Visualization ---
+    feature_importance_fig = visualize_feature_importance_plotly(scaled_features, selected_feature_names)
 
     # Compile metrics
     metrics_display = dbc.Card([
@@ -533,7 +495,7 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
         ])
     ])
 
-    # Prepare tabs content
+    # Prepare tabs content for 2D Visualizations
     tabs_content = []
     for i, fig in enumerate(figures):
         tab_label = fig.layout.title.text if fig.layout.title else f'Tab {i + 1}'
@@ -543,7 +505,7 @@ def run_clustering(n_clicks, selected_geometric_features, selected_image_feature
     end_time = time.time()
     run_time = end_time - start_time
 
-    return metrics_display, dbc.Tabs(children=[dcc.Tab(label='t-SNE', children=[dcc.Graph(figure=figures[0])]), *[dcc.Tab(label=fig.layout.title.text, children=[dcc.Graph(figure=fig)]) for fig in figures[1:]]]), fig_mesh3d, f"Runtime: {run_time:.2f} seconds"
+    return metrics_display, dbc.Tabs(children=tabs_content), fig_mesh3d, feature_importance_fig, f"Runtime: {run_time:.2f} seconds"
 
 
 if __name__ == '__main__':

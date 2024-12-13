@@ -171,25 +171,23 @@ def extract_geometric_features(meshes):
     """Extract geometric features from meshes in a predefined order."""
     features = []
     feature_data = []
+    feature_names = [
+        'surface_area',
+        'sa_to_bbox_volume_ratio',
+        'num_vertices',
+        'num_faces',
+        'mean_curvature',
+        'std_curvature',
+        'mean_edge_length',
+        'std_edge_length',
+        'mean_face_area',
+        'std_face_area'
+    ]
 
     for mesh in meshes:
         surface_area = mesh.area
-        bounding_box = mesh.bounds
-        bbox_size = bounding_box[1] - bounding_box[0]
-        bbox_aspect_ratios = [
-            bbox_size[0] / bbox_size[1] if bbox_size[1] != 0 else 0,
-            bbox_size[1] / bbox_size[2] if bbox_size[2] != 0 else 0,
-            bbox_size[0] / bbox_size[2] if bbox_size[2] != 0 else 0
-        ]
-        bbox_volume = np.prod(bbox_size) if np.prod(bbox_size) != 0 else 1
-        sa_to_bbox_volume_ratio = surface_area / bbox_volume
-
-        verts = mesh.vertices
-        pca = PCA(n_components=3)
-        pca.fit(verts)
-        eigenvalues = pca.explained_variance_
-        eigenvalues_ratio = eigenvalues / np.sum(eigenvalues)
-        first_to_second_axis_ratio = eigenvalues[0] / eigenvalues[1] if eigenvalues[1] != 0 else float('inf')
+        bbox_size = mesh.bounds[1] - mesh.bounds[0]
+        sa_to_bbox_volume_ratio = surface_area / (np.prod(bbox_size) if np.prod(bbox_size) != 0 else 1)
 
         num_vertices = len(mesh.vertices)
         num_faces = len(mesh.faces)
@@ -203,18 +201,13 @@ def extract_geometric_features(meshes):
         std_edge_length = np.std(edges)
 
         face_areas = mesh.area_faces
-        mean_face_area = np.mean(face_areas) if len(face_areas) > 0 else 0  # Handle empty case
-        std_face_area = np.std(face_areas) if len(face_areas) > 0 else 0  # Handle empty case
+        mean_face_area = np.mean(face_areas) if len(face_areas) > 0 else 0
+        std_face_area = np.std(face_areas) if len(face_areas) > 0 else 0
 
         # Ensure all features are 1D arrays for concatenation
         feature_vector = np.concatenate([
             [surface_area],
-            bbox_size.flatten(),
-            bbox_aspect_ratios,
             [sa_to_bbox_volume_ratio],
-            eigenvalues.flatten(),
-            eigenvalues_ratio.flatten(),
-            [first_to_second_axis_ratio],
             [num_vertices, num_faces],
             [mean_curvature, std_curvature],
             [mean_edge_length, std_edge_length],
@@ -225,50 +218,46 @@ def extract_geometric_features(meshes):
         feature_data.append({
             'mesh': mesh,
             'surface_area': surface_area,
-            'bbox_size': bbox_size,
-            'aspect_ratios': bbox_aspect_ratios,
             'sa_to_bbox_volume_ratio': sa_to_bbox_volume_ratio,
-            'pca_components': pca.components_,
-            'pca_mean': pca.mean_,
-            'eigenvalues': eigenvalues,
-            'eigenvalues_ratio': eigenvalues_ratio,
-            'first_to_second_axis_ratio': first_to_second_axis_ratio,
             'num_vertices': num_vertices,
             'num_faces': num_faces,
-            'curvature': curvature,
-            'edge_lengths': edges,
-            'face_areas': face_areas
+            'curvature': curvature,            # Added line
+            'mean_curvature': mean_curvature,
+            'std_curvature': std_curvature,
+            'edge_lengths': edges,             # Added line
+            'mean_edge_length': mean_edge_length,
+            'std_edge_length': std_edge_length,
+            'face_areas': face_areas,          # Added line
+            'mean_face_area': mean_face_area,
+            'std_face_area': std_face_area
         })
 
-    return np.vstack(features), feature_data
-
+    return np.vstack(features), feature_data, feature_names
 
 def extract_image_features(images, model, transform):
     """Extract features from images (ndarray) using a pre-trained ResNet model."""
     image_features = []
 
     for image in images:
-        # Ensure the image is a valid ndarray
         if isinstance(image, np.ndarray):
-            # OpenCV loads images as BGR, but ResNet expects RGB, so we need to convert the color channels
-            if len(image.shape) == 2:  # Grayscale
+            # Convert grayscale to RGB if necessary
+            if len(image.shape) == 2:
                 image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            elif len(image.shape) == 3 and image.shape[2] == 3:  # BGR to RGB
+            elif len(image.shape) == 3 and image.shape[2] == 3:
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-            # Convert the image (ndarray) to a PIL Image
+            # Convert to PIL Image and apply transformations
             pil_image = Image.fromarray(image)
-
-            # Apply transformations and extract features using the pre-trained ResNet model
-            input_tensor = transform(pil_image).unsqueeze(0)  # Add a batch dimension
-            with torch.no_grad():  # Disable gradient computation
-                features = model(input_tensor).squeeze().numpy()  # Extract ResNet features
+            input_tensor = transform(pil_image).unsqueeze(0)
+            with torch.no_grad():
+                features = model(input_tensor).squeeze().numpy()
 
             image_features.append(features)
         else:
             print(f"Warning: Image is not a valid ndarray. Skipping.")
 
     return np.array(image_features)
+
 
 
 def extract_combined_contour_features(contour_images_list, model, transform):

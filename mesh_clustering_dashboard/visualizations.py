@@ -28,6 +28,70 @@ def visualize_tsne_plotly(tsne_results, cluster_labels, subfolder_names):
 
     return fig
 
+# visualizations.py
+
+import plotly.graph_objects as go
+from sklearn.decomposition import PCA
+import numpy as np
+
+def visualize_feature_importance_plotly(features, feature_names):
+    """
+    Visualize feature importance using PCA loadings with Plotly.
+
+    Parameters:
+    - features (np.ndarray): The standardized feature matrix.
+    - feature_names (List[str]): List of feature names corresponding to the columns in `features`.
+
+    Returns:
+    - fig (plotly.graph_objects.Figure): Plotly figure object for feature importance.
+    """
+    # Perform PCA to get loadings
+    pca = PCA(n_components=2)
+    pca.fit(features)
+    loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+    # Create the plot
+    fig = go.Figure()
+
+    # Add arrows and annotations for each feature
+    for i, feature in enumerate(feature_names):
+        fig.add_trace(go.Scatter(
+            x=[0, loadings[i, 0]],
+            y=[0, loadings[i, 1]],
+            mode='lines+markers+text',
+            name=feature,
+            text=[feature, ''],
+            textposition='top center',
+            showlegend=False,
+            line=dict(color='blue', width=2),
+            marker=dict(size=4)
+        ))
+
+    # Add annotations for better visibility
+    for i, feature in enumerate(feature_names):
+        fig.add_annotation(
+            x=loadings[i, 0],
+            y=loadings[i, 1],
+            text=feature,
+            showarrow=False,
+            xanchor='left' if loadings[i, 0] >= 0 else 'right',
+            yanchor='bottom' if loadings[i, 1] >= 0 else 'top',
+            font=dict(color='black', size=10)
+        )
+
+    fig.update_layout(
+        title='Feature Importance (PCA Loadings)',
+        xaxis=dict(title='PCA Component 1'),
+        yaxis=dict(title='PCA Component 2'),
+        showlegend=False,
+        width=600,
+        height=600,
+        template='plotly_white'
+    )
+
+    return fig
+
+
 
 def visualize_surface_area_plotly(subfolder_names, surface_areas):
     """Creates a Plotly bar chart for surface areas."""
@@ -211,3 +275,21 @@ def visualize_mesh3d(meshes, cluster_labels):
     return fig
 
 
+def visualize_reflection_symmetry_plotly(symmetries, subfolder_names):
+    """Creates a bar chart for reflection symmetry measures."""
+    df = pd.DataFrame(symmetries)
+    df['Mesh'] = subfolder_names
+    df_melted = df.melt(id_vars='Mesh', var_name='Axis', value_name='Symmetry Score')
+    fig = px.bar(df_melted, x='Mesh', y='Symmetry Score', color='Axis',
+                 title='Reflection Symmetry Measures', barmode='group')
+    fig.update_layout(xaxis_title='Mesh', yaxis_title='Symmetry Score')
+    return fig
+
+def visualize_curvature_histogram_plotly(curvature_histograms):
+    """Creates an average curvature histogram plot."""
+    avg_histogram = np.mean(curvature_histograms, axis=0)
+    bins = np.arange(1, len(avg_histogram) + 1)
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=bins, y=avg_histogram))
+    fig.update_layout(title='Average Curvature Histogram', xaxis_title='Bin', yaxis_title='Density')
+    return fig
