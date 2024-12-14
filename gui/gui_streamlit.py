@@ -1,3 +1,5 @@
+import sys
+
 import streamlit as st
 import torch
 import numpy as np
@@ -17,6 +19,9 @@ import zipfile  # For creating the ZIP of .ply files
 
 # --- Page Config ---
 st.set_page_config(page_title="3D Mesh Segmentation Tool", layout="wide")
+
+# Add the parent directory of `gui` to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../')
 
 # --- Tools ---
 from tools.orthograohic_image import capture_textured_image_and_depth_from_obj
@@ -155,6 +160,7 @@ if params_changed:
     st.session_state.processed = False
     st.session_state.sam_processed = False
 
+
 # ----------------------------
 # Function Definitions
 # ----------------------------
@@ -171,6 +177,7 @@ def load_sam_model(model_path="sam2.1_l.pt", device="cpu"):
         st.error(f"Failed to load SAM model: {e}")
         return None
 
+
 def resize_image(image_path, max_size=(1024, 1024)):
     """
     Resize the image to fit within max_size while maintaining aspect ratio.
@@ -178,6 +185,7 @@ def resize_image(image_path, max_size=(1024, 1024)):
     image = Image.open(image_path)
     image.thumbnail(max_size, Image.Resampling.LANCZOS)
     return image
+
 
 def process_obj(uploaded_file, params):
     """
@@ -204,6 +212,7 @@ def process_obj(uploaded_file, params):
     except Exception as e:
         st.error(f"Failed to process OBJ file: {e}")
         return None, None, None, None
+
 
 # ----------------------------
 # Main
@@ -357,19 +366,19 @@ if st.session_state.obj_file is not None:
                             mask_pil = Image.fromarray(mask_display)
                             resized_mask = mask_pil.resize((new_width, new_height), Image.Resampling.LANCZOS)
                             with col:
-                                st.image(resized_mask, caption=f"Mask {mask_idx+1}", use_container_width=True)
+                                st.image(resized_mask, caption=f"Mask {mask_idx + 1}", use_container_width=True)
                             mask_idx += 1
 
             # Single editing widget
             if st.session_state.sam_processed and st.session_state.all_masks:
                 st.markdown("### ✏️ **Edit Masks**")
-                mask_options = [f"Mask {i+1}" for i in range(len(st.session_state.all_masks))]
+                mask_options = [f"Mask {i + 1}" for i in range(len(st.session_state.all_masks))]
                 mask_to_edit = st.selectbox("Select a mask to edit:", options=mask_options)
                 selected_mask_idx = int(mask_to_edit.split()[-1]) - 1
 
                 current_mask_bool = st.session_state.all_masks[selected_mask_idx]
                 if current_mask_bool.size == 0 or current_mask_bool.ndim != 2:
-                    st.warning(f"Invalid shape {current_mask_bool.shape} for mask {selected_mask_idx+1}")
+                    st.warning(f"Invalid shape {current_mask_bool.shape} for mask {selected_mask_idx + 1}")
                 else:
                     bw_display = np.where(current_mask_bool, 255, 0).astype(np.uint8)
                     mask_pil = Image.fromarray(bw_display, mode="L").convert("RGBA")
@@ -502,7 +511,7 @@ if st.session_state.obj_file is not None:
                                             ),
                                             margin=dict(l=0, r=0, t=0, b=0)
                                         )
-                                        st.markdown(f"Masked Area {idx+1}")
+                                        st.markdown(f"Masked Area {idx + 1}")
                                         st.plotly_chart(fig, use_container_width=True)
 
                             st.success("3D visualization rendered successfully!")
