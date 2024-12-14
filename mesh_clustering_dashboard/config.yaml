@@ -1,0 +1,50 @@
+# Configuration for Mesh Clustering and Visualization
+
+features:
+  geometric_features:
+    surface_area: true
+    bbox_size: true
+    bbox_aspect_ratios: true
+    sa_to_bbox_volume_ratio: true
+    eigenvalues: true
+    eigenvalues_ratio: true
+    first_to_second_axis_ratio: true
+    num_vertices: true
+    num_faces: true
+    curvature:
+      mean_curvature: true
+      std_curvature: true
+    edge_lengths:
+      mean_edge_length: true
+      std_edge_length: true
+    face_areas:
+      mean_face_area: true
+      std_face_area: true
+  contour_features: true
+  depth_features: false
+  skeleton_features: false
+
+clustering:
+  algorithm: kmeans  # Options: kmeans, dbscan, agglomerative, spectral, gmm
+  parameters:
+    # Parameters for KMeans
+    n_clusters: 5
+    n_init: 50
+    random_state: 42
+
+    # Parameters for DBSCAN
+    eps: 0.5
+    min_samples: 5
+
+    # Parameters for Agglomerative Clustering
+    linkage: ward
+
+    # Parameters for Spectral Clustering
+    n_components: 100
+
+    # Parameters for Gaussian Mixture Models
+    n_components_gmm: 5
+    covariance_type: full
+
+report:
+  output_file: "mesh_clustering_report.html"

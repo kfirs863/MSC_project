@@ -1,0 +1,14 @@
+{
+    "surface_area": "Total surface area of the mesh.",
+    "sa_to_bbox_volume_ratio": "Ratio of surface area to bounding box volume.",
+    "mean_curvature": "Mean curvature of the mesh surface.",
+    "std_curvature": "Standard deviation of the mesh surface curvature.",
+    "mean_edge_length": "Mean length of the edges in the mesh.",
+    "std_edge_length": "Standard deviation of the edge lengths in the mesh.",
+    "mean_face_area": "Mean area of the faces in the mesh.",
+    "std_face_area": "Standard deviation of the face areas in the mesh.",
+    "reflection_symmetry_x": "Symmetry score across the X-axis.",
+    "reflection_symmetry_y": "Symmetry score across the Y-axis.",
+    "reflection_symmetry_z": "Symmetry score across the Z-axis.",
+    "curvature_histogram": "Histogram of curvature values across the mesh surface."
+}
