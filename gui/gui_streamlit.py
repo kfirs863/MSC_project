@@ -211,6 +211,7 @@ def process_obj(uploaded_file, params):
         return temp_obj_path, str(resized_image_path), depth_path, camera_params_path
     except Exception as e:
         st.error(f"Failed to process OBJ file: {e}")
+        st.exception(e)
         return None, None, None, None
 
 
