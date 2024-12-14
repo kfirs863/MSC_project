@@ -1,0 +1,13 @@
+streamlit
+torch
+torchvision
+open3d
+scikit-image
+matplotlib
+ipywidgets
+ultralytics
+streamlit-drawable-canvas
+numpy
+Pillow
+plotly
+tqdm
