@@ -1,7 +1,7 @@
 streamlit
 torch
 torchvision
-open3d
+open3d==0.17.0
 scikit-image
 matplotlib
 ipywidgets
