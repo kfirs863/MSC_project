@@ -1,5 +1,7 @@
-import matplotlib.pyplot as plt
-from tools.utils import *
+import os
+import numpy as np
+import open3d as o3d
+from tools.utils import preprocess_mesh, enhance_image, save_image_and_params
 
 
 def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0, number_of_iterations=1, use_sharpen=True, strength=0.01, disable_reflection=False,with_texture=True):
@@ -70,13 +72,13 @@ def capture_textured_image_and_depth_from_obj(obj_path, zoom=1.0, number_of_iter
 
 if __name__ == '__main__':
     obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/datasets/cross2_mask_8/mask.ply'
-    # obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Crosses on Staircase left/staircase_left.obj'
-    output_image_path, output_depth_path, output_params_path = capture_textured_image_and_depth_from_obj(obj_path,zoom=0.5,number_of_iterations=0,strength=0.01,disable_reflection=True)
-    print(f"Image saved to: {output_image_path}")
-    print(f"Camera intrinsics saved: {output_params_path}")
-    # Load and display the image
-    image = cv2.imread(output_image_path, cv2.IMREAD_COLOR)
-    plt.imshow(image)
-    plt.axis('off')
-
-    plt.show()
+    # # obj_path = '/mobileye/RPT/users/kfirs/kfir_project/MSC_Project/models/Crosses on Staircase left/staircase_left.obj'
+    # output_image_path, output_depth_path, output_params_path = capture_textured_image_and_depth_from_obj(obj_path,zoom=0.5,number_of_iterations=0,strength=0.01,disable_reflection=True)
+    # print(f"Image saved to: {output_image_path}")
+    # print(f"Camera intrinsics saved: {output_params_path}")
+    # # Load and display the image
+    # image = cv2.imread(output_image_path, cv2.IMREAD_COLOR)
+    # plt.imshow(image)
+    # plt.axis('off')
+    #
+    # plt.show()
