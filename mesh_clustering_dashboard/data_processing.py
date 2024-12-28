@@ -1,174 +1,160 @@
-# data_processing.py
-
 import os
 import numpy as np
 import trimesh
-import cv2
-import torch
-import torchvision.models as models
-import torchvision.transforms as transforms
 from PIL import Image
+import yaml
 from sklearn.decomposition import PCA
 from scipy.sparse import csr_matrix
-from sklearn.preprocessing import StandardScaler
-import yaml
-from torchvision.models import ResNet50_Weights
+
+from tools.utils import find_rotation_matrix  # or your own utility if needed
+
+def load_feature_descriptions(yaml_path='feature_descriptions.yaml'):
+    """
+    Load a YAML or dictionary describing each feature.
+    If you don't have an actual file, you can return a dict manually.
+    """
+    try:
+        with open(yaml_path, 'r') as f:
+            data = yaml.safe_load(f)
+        return data
+    except FileNotFoundError:
+        # fallback: return an empty or default dict
+        return {
+            "surface_area": "Surface area of the mesh.",
+            "sa_to_bbox_volume_ratio": "Surface area to bounding box volume ratio.",
+            "num_vertices": "Number of vertices in the mesh.",
+            "num_faces": "Number of faces in the mesh.",
+            "mean_curvature": "Mean curvature of the mesh.",
+            "std_curvature": "Standard deviation of the curvature.",
+            "mean_edge_length": "Mean edge length of the mesh.",
+            "std_edge_length": "Standard deviation of the edge lengths.",
+            "mean_face_area": "Mean face area.",
+            "std_face_area": "Standard deviation of the face areas.",
+            "axis_ratio": "Ratio of major axis to minor axis in the XY-plane.",
+            "median_depth": "Median depth (Z) of the mesh."
+        }
 
 
-def initialize_resnet_model():
-    """Initialize a pre-trained ResNet model for feature extraction."""
-    # Load the pre-trained ResNet model
-    model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-    # Remove the last fully connected layer
-    model = torch.nn.Sequential(*list(model.children())[:-1])
-    # Set the model to evaluation mode
-    model.eval()
+def load_meshes_from_folders(datasets_folder):
+    """Load meshes from a folder hierarchy, ignoring any 2D images."""
+    meshes = []
+    subfolder_names = []
 
-    # Define the image transformation
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225]),
-    ])
-    return model, transform
+    for subfolder_name in os.listdir(datasets_folder):
+        subfolder_path = os.path.join(datasets_folder, subfolder_name)
+        if os.path.isdir(subfolder_path):
+            ply_file = None
 
+            # Look for 'mask.ply' or similar
+            for file_name in os.listdir(subfolder_path):
+                if file_name == 'mask.ply':
+                    ply_file = os.path.join(subfolder_path, file_name)
+                    break
 
-def load_config(config_path='config.yaml'):
-    """Load configuration from a YAML file."""
-    with open(config_path, 'r') as file:
-        config = yaml.safe_load(file)
-    return config
+            if ply_file:
+                mesh = trimesh.load(ply_file)
+                meshes.append(mesh)
+                subfolder_names.append(subfolder_name)
+            else:
+                print(f"Skipping {subfolder_name} because no 'mask.ply' found.")
+
+    return meshes, subfolder_names
 
 
 def normalize_mesh(mesh, only_scale=False):
     """Normalize the mesh for translation, rotation, and scale invariance."""
-    # Create a copy of the mesh to avoid modifying the original
     mesh_copy = mesh.copy()
 
     if not only_scale:
-        # Move the centroid to the origin (translation invariance)
+        # Translate centroid to origin
         centroid = mesh_copy.vertices.mean(axis=0)
         mesh_copy.vertices -= centroid
 
-        # Apply PCA to align principal axes (rotation invariance)
+        # Align principal axes with PCA
         pca = PCA(n_components=3)
         pca.fit(mesh_copy.vertices)
         mesh_copy.vertices = np.dot(mesh_copy.vertices, pca.components_.T)
 
-    # Scale the mesh to fit within a unit sphere (scale invariance)
+    # Scale to fit within a unit sphere
     scale = np.linalg.norm(mesh_copy.vertices, axis=1).max()
-    mesh_copy.vertices /= scale
+    if scale != 0:
+        mesh_copy.vertices /= scale
 
     return mesh_copy
 
 
-def load_meshes_and_images_from_folders(datasets_folder):
-    """Load meshes and corresponding images from a folder hierarchy, and track subfolder names."""
-    meshes = []
-    normalized_meshes = []
-    depth_images = []
-    contour_images_list = []
-    skeleton_images = []
-    subfolder_names = []
-
-    # Traverse each subfolder in the datasets folder
-    for subfolder_name in os.listdir(datasets_folder):
-        subfolder_path = os.path.join(datasets_folder, subfolder_name)
-
-        if os.path.isdir(subfolder_path):
-            ply_file = None
-            depth_image_file = None
-            contour_image_files = []
-            skeleton_image_file = None
-
-            # Traverse files within each subfolder to find mask.ply, depth_profile.png, contour_*.png, and skeleton.png
-            for file_name in os.listdir(subfolder_path):
-                if file_name == 'mask.ply':  # Mesh file name is 'mask.ply'
-                    ply_file = os.path.join(subfolder_path, file_name)
-                elif file_name == 'depth_profile.png':  # Depth profile image
-                    depth_image_file = os.path.join(subfolder_path, file_name)
-                elif file_name.startswith('contour_') and file_name.endswith('.png'):  # Contour images
-                    contour_image_files.append(os.path.join(subfolder_path, file_name))
-                elif file_name == 'skeleton.png':  # Skeleton image
-                    skeleton_image_file = os.path.join(subfolder_path, file_name)
-
-            # Ensure all necessary files are found
-            if ply_file and depth_image_file and contour_image_files and skeleton_image_file:
-                # Load the mesh using Trimesh
-                mesh = trimesh.load(ply_file)
-                scaled_mesh = normalize_mesh(mesh, only_scale=True)
-                normalized_mesh = normalize_mesh(mesh)
-                meshes.append(scaled_mesh)
-                normalized_meshes.append(normalized_mesh)
-
-                # Load the depth profile image
-                depth_image = cv2.imread(depth_image_file, cv2.IMREAD_GRAYSCALE)
-                depth_images.append(depth_image)
-
-                # Load all contour images
-                contour_images = [cv2.imread(contour_file, cv2.IMREAD_GRAYSCALE) for contour_file in
-                                  contour_image_files]
-                contour_images_list.append(contour_images)
-
-                # Load the skeleton image
-                skeleton_image = cv2.imread(skeleton_image_file, cv2.IMREAD_GRAYSCALE)
-                skeleton_images.append(skeleton_image)
-
-                # Track the subfolder name for tracing back later
-                subfolder_names.append(subfolder_name)
-            else:
-                print(f"Skipping {subfolder_name} due to missing files.")
-                continue
-
-    return meshes, normalized_meshes, depth_images, contour_images_list, skeleton_images, subfolder_names
-
-
 def compute_laplacian_curvature_vectorized(mesh):
-    """Compute mean curvature using a vectorized Laplace-Beltrami approach with sparse matrix."""
+    """Compute mean curvature using a Laplace-Beltrami approach with a sparse adjacency matrix."""
     vertex_count = len(mesh.vertices)
     vertex_indices = np.arange(vertex_count)
 
-    # Build sparse adjacency matrix
+    # Build adjacency
     data = []
     rows = []
     cols = []
-
     for vi in vertex_indices:
         neighbors = mesh.vertex_neighbors[vi]
         num_neighbors = len(neighbors)
         if num_neighbors > 0:
-            data.extend([1] * num_neighbors)
-            rows.extend([vi] * num_neighbors)
+            data.extend([1]*num_neighbors)
+            rows.extend([vi]*num_neighbors)
             cols.extend(neighbors)
 
     adjacency_matrix = csr_matrix((data, (rows, cols)), shape=(vertex_count, vertex_count))
 
-    # Degree matrix: diagonal matrix with the degree of each vertex
-    degree_matrix = csr_matrix((adjacency_matrix.sum(axis=1).A1, (vertex_indices, vertex_indices)),
-                               shape=(vertex_count, vertex_count))
+    # Degree matrix
+    degrees = adjacency_matrix.sum(axis=1).A1
+    degree_matrix = csr_matrix((degrees, (vertex_indices, vertex_indices)), shape=(vertex_count, vertex_count))
 
-    # Laplacian Matrix: L = D - A
+    # Laplacian
     laplacian_matrix = degree_matrix - adjacency_matrix
 
-    # Compute the Laplacian vector for each vertex
+    # Laplacian * vertices
     laplacian = laplacian_matrix.dot(mesh.vertices)
 
-    # Normalize by the degree to get the mean curvature vector at each vertex
-    degrees = adjacency_matrix.sum(axis=1).A1  # Get the degree of each vertex
-    laplacian /= degrees[:, np.newaxis]  # Avoid division by zero by handling isolated vertices
+    # Normalize by degree
+    degrees[degrees == 0] = 1.0  # avoid division by zero
+    laplacian /= degrees[:, np.newaxis]
 
-    # Compute the norm of the Laplacian vector, which corresponds to mean curvature magnitude
     curvature = np.linalg.norm(laplacian, axis=1)
-
-    # Handle isolated vertices (if any)
     curvature[np.isnan(curvature)] = 0
-
     return curvature
 
 
+def compute_main_axis_ratio(mesh):
+    """
+    Compute ratio of major axis length to minor axis length in the XY-plane after rotation alignment.
+    """
+    vertices = np.asarray(mesh.vertices)
+    rotation_matrix = find_rotation_matrix(vertices)
+    aligned_vertices = np.dot(vertices, rotation_matrix.T)
+
+    xy_projection = aligned_vertices[:, :2]
+    pca_2d = PCA(n_components=2)
+    pca_2d.fit(xy_projection)
+    transformed = pca_2d.transform(xy_projection)
+
+    major_axis_length = np.max(transformed[:, 0]) - np.min(transformed[:, 0])
+    minor_axis_length = np.max(transformed[:, 1]) - np.min(transformed[:, 1])
+    if minor_axis_length == 0:
+        return 0
+    axis_ratio = major_axis_length / minor_axis_length
+    return axis_ratio
+
+
+def compute_median_depth(mesh):
+    """Compute the median Z (depth) after best-fit alignment."""
+    vertices = np.asarray(mesh.vertices)
+    rotation_matrix = find_rotation_matrix(vertices)
+    aligned_vertices = np.dot(vertices, rotation_matrix.T)
+    return np.median(aligned_vertices[:, 2])
+
+
 def extract_geometric_features(meshes):
-    """Extract geometric features from meshes in a predefined order."""
+    """
+    Extract a set of geometric features from each mesh.
+    Returns (feature_matrix, list_of_dicts, feature_names).
+    """
     features = []
     feature_data = []
     feature_names = [
@@ -181,94 +167,78 @@ def extract_geometric_features(meshes):
         'mean_edge_length',
         'std_edge_length',
         'mean_face_area',
-        'std_face_area'
+        'std_face_area',
+        'axis_ratio',
+        'median_depth'
     ]
 
     for mesh in meshes:
-        surface_area = mesh.area
-        bbox_size = mesh.bounds[1] - mesh.bounds[0]
-        sa_to_bbox_volume_ratio = surface_area / (np.prod(bbox_size) if np.prod(bbox_size) != 0 else 1)
+        # Create scaled and fully-normalized versions if needed
+        scaled_mesh = normalize_mesh(mesh, only_scale=True)
+        normalized_mesh = normalize_mesh(mesh, only_scale=False)
 
-        num_vertices = len(mesh.vertices)
-        num_faces = len(mesh.faces)
+        # Basic stats
+        surface_area = scaled_mesh.area
+        bbox = scaled_mesh.bounds  # shape (2,3)
+        bbox_size = bbox[1] - bbox[0]
+        volume_bbox = np.prod(bbox_size) if np.prod(bbox_size) != 0 else 1
+        sa_to_bbox_vol = surface_area / volume_bbox
 
-        curvature = compute_laplacian_curvature_vectorized(mesh)
-        mean_curvature = np.mean(curvature)
-        std_curvature = np.std(curvature)
+        num_vertices = len(scaled_mesh.vertices)
+        num_faces = len(scaled_mesh.faces)
 
-        edges = mesh.edges_unique_length
-        mean_edge_length = np.mean(edges)
-        std_edge_length = np.std(edges)
+        # Curvature from scaled_mesh
+        curvature = compute_laplacian_curvature_vectorized(scaled_mesh)
+        mean_curv = np.mean(curvature)
+        std_curv = np.std(curvature)
 
-        face_areas = mesh.area_faces
-        mean_face_area = np.mean(face_areas) if len(face_areas) > 0 else 0
-        std_face_area = np.std(face_areas) if len(face_areas) > 0 else 0
+        # Edge lengths
+        edges = scaled_mesh.edges_unique_length
+        mean_edge_len = np.mean(edges) if len(edges) else 0
+        std_edge_len = np.std(edges) if len(edges) else 0
 
-        # Ensure all features are 1D arrays for concatenation
-        feature_vector = np.concatenate([
-            [surface_area],
-            [sa_to_bbox_volume_ratio],
-            [num_vertices, num_faces],
-            [mean_curvature, std_curvature],
-            [mean_edge_length, std_edge_length],
-            [mean_face_area, std_face_area]
+        # Face areas
+        face_areas = scaled_mesh.area_faces
+        mean_fa = np.mean(face_areas) if len(face_areas) else 0
+        std_fa = np.std(face_areas) if len(face_areas) else 0
+
+        # Axis ratio & median depth from fully normalized mesh
+        axis_ratio = compute_main_axis_ratio(normalized_mesh)
+        median_depth = compute_median_depth(normalized_mesh)
+
+        feature_vector = np.array([
+            surface_area,
+            sa_to_bbox_vol,
+            num_vertices,
+            num_faces,
+            mean_curv,
+            std_curv,
+            mean_edge_len,
+            std_edge_len,
+            mean_fa,
+            std_fa,
+            axis_ratio,
+            median_depth
         ])
 
         features.append(feature_vector)
         feature_data.append({
             'mesh': mesh,
             'surface_area': surface_area,
-            'sa_to_bbox_volume_ratio': sa_to_bbox_volume_ratio,
+            'sa_to_bbox_volume_ratio': sa_to_bbox_vol,
             'num_vertices': num_vertices,
             'num_faces': num_faces,
-            'curvature': curvature,            # Added line
-            'mean_curvature': mean_curvature,
-            'std_curvature': std_curvature,
-            'edge_lengths': edges,             # Added line
-            'mean_edge_length': mean_edge_length,
-            'std_edge_length': std_edge_length,
-            'face_areas': face_areas,          # Added line
-            'mean_face_area': mean_face_area,
-            'std_face_area': std_face_area
+            'curvature': curvature,
+            'mean_curvature': mean_curv,
+            'std_curvature': std_curv,
+            'edge_lengths': edges,
+            'mean_edge_length': mean_edge_len,
+            'std_edge_length': std_edge_len,
+            'face_areas': face_areas,
+            'mean_face_area': mean_fa,
+            'std_face_area': std_fa,
+            'axis_ratio': axis_ratio,
+            'median_depth': median_depth
         })
 
     return np.vstack(features), feature_data, feature_names
-
-def extract_image_features(images, model, transform):
-    """Extract features from images (ndarray) using a pre-trained ResNet model."""
-    image_features = []
-
-    for image in images:
-        if isinstance(image, np.ndarray):
-            # Convert grayscale to RGB if necessary
-            if len(image.shape) == 2:
-                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-            elif len(image.shape) == 3 and image.shape[2] == 3:
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-            # Convert to PIL Image and apply transformations
-            pil_image = Image.fromarray(image)
-            input_tensor = transform(pil_image).unsqueeze(0)
-            with torch.no_grad():
-                features = model(input_tensor).squeeze().numpy()
-
-            image_features.append(features)
-        else:
-            print(f"Warning: Image is not a valid ndarray. Skipping.")
-
-    return np.array(image_features)
-
-
-
-def extract_combined_contour_features(contour_images_list, model, transform):
-    """Extract and combine features from multiple contour images."""
-    combined_contour_features = []
-
-    for contour_images in contour_images_list:
-        # Extract features from each contour image using the pre-trained ResNet
-        contour_features = extract_image_features(contour_images, model, transform)
-        # Combine the features from multiple contour images (e.g., by averaging or concatenation)
-        combined_features = np.mean(contour_features, axis=0)  # Here, we're using averaging
-        combined_contour_features.append(combined_features)
-
-    return np.array(combined_contour_features)

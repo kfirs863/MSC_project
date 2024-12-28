@@ -11,8 +11,6 @@ import plotly.graph_objects as go
 import open3d as o3d
 from ultralytics import SAM
 import os
-import json
-from tqdm import tqdm
 from streamlit_drawable_canvas import st_canvas
 import io
 import zipfile  # For creating the ZIP of .ply files
